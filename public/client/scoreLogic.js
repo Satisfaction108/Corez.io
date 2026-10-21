@@ -2,13 +2,13 @@
 
 export const RULE = "Points = banked gems + kills & bonuses + crowns";
 export const RULE_SHORT = "PTS = BANKED + KILLS + CROWNS";
-export const RULE_BODY = "Whoever has the most points when the raid ends wins. Banked gems are safe, and dying never takes them. " +
+export const RULE_BODY = "Whoever has the most points when the raid ends wins. Dying never takes your points, and you respawn with 60% of your banked gems. " +
     "Carried gems only count once you bank them. Past 5,000 in a raid, each banked gem counts half a point (you keep every gem). " +
     "Kills, streaks, bosses and quests give bonus points. " +
     "A crown gives points every second, but whoever kills you takes it and up to 30% of your kill and crown points.";
 
 export const RULE_BODY_AO = "Your points add up all day and reset at 00:00 UTC. The top 3 on the daily board win gemdust and a crown by their name for the next day. " +
-    "Banked gems are safe, and dying never takes them. Carried gems only count once you bank them. Past 5,000 in a day, each banked gem counts half a point (you keep every gem). " +
+    "Dying never takes your points, and you respawn with 60% of your banked gems. Carried gems only count once you bank them. Past 5,000 in a day, each banked gem counts half a point (you keep every gem). " +
     "Kills, streaks, bosses, quests and events give bonus points. " +
     "The top 3 of each event get a crown that gives points every second, but whoever kills you takes it and up to 30% of your kill and crown points.";
 export function ruleBody(ao) { return ao ? RULE_BODY_AO : RULE_BODY; }
@@ -63,8 +63,8 @@ export function deathLine(you, carried, savingsLost = 0, kept = 0) {
     let lost;
     if (lostPts > 0) lost = "lost " + num(lostPts) + ": " + (dl.by ? dl.by + " took your crown" : "your crown was taken");
     else if (sav > 0) lost = dl.cr ? "points lost: 0, your crown fell" : "points lost: 0";
-    else if (dl.cr) lost = "lost 0: your crown fell, banked gems are safe";
-    else lost = "lost 0: banked gems are safe";
+    else if (dl.cr) lost = "lost 0: your crown fell, your points are safe";
+    else lost = "lost 0: your points are safe";
     const c = Math.max(0, (carried != null ? carried : dl.c) | 0);
     const k = Math.max(0, kept | 0);
     const sub = k > 0
@@ -74,7 +74,7 @@ export function deathLine(you, carried, savingsLost = 0, kept = 0) {
 }
 export function savingsLine(n) {
     n = Math.max(0, n | 0);
-    return n > 0 ? "Your savings from earlier raids paid " + num(n) + " gems for this death. Your points are fine." : "";
+    return n > 0 ? "Dying cost " + num(n) + " banked gems. You keep 60% for your next life, and your points are fine." : "";
 }
 
 // The three parts as death card / results tiles: [label, value, icon]
@@ -126,7 +126,7 @@ export function crownCard(crown) {
         title: "YOU HAVE A CROWN",
         // final minute: crowns bank like anyone, but the vault pushes them off right
         line1: "+" + pps + " pts/sec. " + (crown.sd ? "Bank fast, the vault won't hide you." : "Others will hunt you."),
-        line2: lose > 0 ? "If killed: -" + num(lose) + " pts. Banked gems stay safe." : "If killed: you lose the crown. Banked gems stay safe.",
+        line2: lose > 0 ? "If killed: -" + num(lose) + " pts. Banked points stay safe." : "If killed: you lose the crown. Banked points stay safe.",
     };
 }
 

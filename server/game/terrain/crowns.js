@@ -87,7 +87,7 @@ function stealOf(b) {
 // stealOf as a number: "-1,500 pts" style text for the crowned
 function riskText(b) {
     const n = stealOf(b);
-    return n > 0 ? "If they get you now, you lose " + fmt(n) + " pts, and that grows as you earn. Your banked gems are safe." : "Your banked gems are safe if they get you.";
+    return n > 0 ? "If they get you now, you lose " + fmt(n) + " pts, and that grows as you earn. Your banked points are safe." : "Your banked points are safe if they get you.";
 }
 function keyOf(b) { try { return hooks.keyOf ? hooks.keyOf(b) : null; } catch { return null; } }
 function holderOf(b) { return b ? S.holders.find(h => h.body === b) || null : null; }
@@ -188,7 +188,7 @@ function onDeath(victim, killer, t = Date.now()) {
     const vn = nameOf(victim), kn = k ? nameOf(k) : "", tn = to ? nameOf(to) : "";
     if (how === 'steal') {
         say(k, 'crowntake', "CROWN STOLEN", "You took " + vn + "'s crown: " + (stolen ? "+" + fmt(stolen) + " pts, " : "") + "+" + rate() + "/sec while you hold it.", 3600, stolen);
-        say(victim, 'crownlost', "CROWN LOST", kn + " took your crown" + (stolen ? " and " + fmt(stolen) + " of your kill and crown points" : "") + ". Your banked gems are safe.", 3600);
+        say(victim, 'crownlost', "CROWN LOST", kn + " took your crown" + (stolen ? " and " + fmt(stolen) + " of your kill and crown points" : "") + ". Your banked points are safe.", 3600);
         fx(k, 'crownsteal');
         feed({ crown: 1, took: 1, by: kn, name: vn, pts: stolen });
     } else {

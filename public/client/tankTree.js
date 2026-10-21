@@ -10,6 +10,7 @@ let D = null;
 let isOpen = false;
 let g = null, gKey = "", gMocks = null;
 let whole = false;
+let found = "", foundIdx = [];
 let expanded = new Map();
 let opn = null, vis = null, box = null;
 let cur = -1, curKey = "", pathSet = new Set(), subSet = new Set();
@@ -39,6 +40,7 @@ export function opened() { return isOpen; }
 export function open() {
     isOpen = true;
     whole = false;
+    found = ""; foundIdx = [];
     searchQ = "";
     if (searchEl) searchEl.value = "";
     if (listEl) listEl.style.display = "none";
@@ -98,6 +100,7 @@ function ensureGraph() {
     }
     built = [0, 0, 0, 0];
     expanded = new Map();
+    if (found) { foundIdx = L.instsNamed(g, found); if (!foundIdx.length) found = ""; }
     curKey = "";
     dirty = true;
     return true;
@@ -105,12 +108,17 @@ function ensureGraph() {
 
 function relayout(recentre) {
     const type = String(D.tankType());
-    if (type !== curKey) { curKey = type; cur = L.findInst(g, type); recentre = true; if (!whole) expanded = new Map(); }
-    pathSet = new Set(cur >= 0 ? L.pathOf(g, cur) : []);
+    if (type !== curKey) { curKey = type; cur = L.findInst(g, type); if (!found) { recentre = true; if (!whole) expanded = new Map(); } }
     subSet = new Set();
-    if (cur >= 0) { const q = [cur]; while (q.length) { const i = q.pop(); subSet.add(i); for (const k of g.inst[i].kids) q.push(k); } }
-    opn = whole ? L.allOpen(g) : L.focusOpen(g, cur, expanded);
-    vis = L.visibleOf(g, opn);
+    if (found) {
+        const r = L.pathsTo(g, foundIdx, expanded);
+        opn = r.open; vis = r.vis; pathSet = r.on;
+    } else {
+        pathSet = new Set(cur >= 0 ? L.pathOf(g, cur) : []);
+        if (cur >= 0) { const q = [cur]; while (q.length) { const i = q.pop(); subSet.add(i); for (const k of g.inst[i].kids) q.push(k); } }
+        opn = whole ? L.allOpen(g) : L.focusOpen(g, cur, expanded);
+        vis = L.visibleOf(g, opn);
+    }
     box = L.layout(g, opn, vis, { whole, hi: pathSet });
     ver++;
     dirty = false;
@@ -133,7 +141,7 @@ function frame(snap) {
         const usable = H - headH();
         z = Math.min(1.25, fit);
         x = (box.minX + box.maxX) / 2 - 50 / z; y = (box.minY + box.maxY) / 2;
-        if (z < 0.5 && cur >= 0) {
+        if (z < 0.5 && cur >= 0 && !found) {
             z = 0.75;
             const n = g.inst[cur];
             x = n.x + TILE / 2;
@@ -165,8 +173,9 @@ function toggle(i) {
 }
 
 function setWhole(on) {
-    if (whole === on) return;
+    if (whole === on && !found) return;
     whole = on;
+    if (found) { found = ""; foundIdx = []; expanded = new Map(); }
     relayout(true);
     goal.on = false;
 }
@@ -189,8 +198,8 @@ function buttonAt(x, y) {
 function press(b) {
     D.click();
     if (b === 0) global.tankTree("exit");
-    else if (b === 1) setWhole(!whole);
-    else if (b === 2) { if (cur >= 0 && g) { sel = cur; centreOn(cur, Math.max(view.z, 0.8)); } }
+    else if (b === 1) setWhole(found ? false : !whole);
+    else if (b === 2) { if (found) setWhole(false); if (cur >= 0 && g) { sel = cur; centreOn(cur, Math.max(view.z, 0.8)); } }
 }
 
 function nodeAt(x, y) {
@@ -267,7 +276,7 @@ export function key(e, isDown) {
     if (arrow) { keys[arrow] = isDown; if (isDown) goal.on = false; return true; }
     if (c === 16) { keys.fast = isDown; return false; }
     if (!isDown) return c === 9 || c === 27 || c === 69 || c === 13 || c === 32 || c === 67 || c === 36;
-    if (c === 27) { global.tankTree("exit"); return true; }
+    if (c === 27) { if (found) setWhole(false); else global.tankTree("exit"); return true; }
     if (c === 9) { if (!e.repeat) setWhole(!whole); return true; }
     if (c === 69 || c === 13 || c === 32) {
         if (e.repeat) return true;
@@ -348,9 +357,10 @@ function buildSprite(n, lvl) {
     D.rr(c, ox + 1.5, 1.5, TILE - 3, TILE - 3, 5);
     c.stroke();
     if (t.known) { try { D.paintTank(c, t.key, ox + 5, 5, TILE - 10, TILE - 10); } catch (e) { } }
+    const badge = badgeFill();
     if (n.tier >= L.T5_TIER) {
         D.rr(c, ox + TILE - 23, 4, 19, 12, 4);
-        c.fillStyle = "rgba(0,0,0,0.78)";
+        c.fillStyle = badge;
         c.fill();
         c.lineWidth = 1.2;
         c.strokeStyle = D.HUD.gold;
@@ -359,7 +369,7 @@ function buildSprite(n, lvl) {
     }
     if (D.isFeatured && D.isFeatured(t.name)) {
         D.rr(c, ox + 4, 4, 24, 12, 4);
-        c.fillStyle = "rgba(0,0,0,0.78)";
+        c.fillStyle = badge;
         c.fill();
         c.lineWidth = 1.2;
         c.strokeStyle = "#9dff8a";
@@ -370,7 +380,7 @@ function buildSprite(n, lvl) {
     if (pb && pb.s > 0) {
         const pbTxt = pb.s >= 10000 ? Math.round(pb.s / 1000) + "k" : String(pb.s);
         D.rr(c, ox + 4, TILE - 15, 28, 12, 4);
-        c.fillStyle = "rgba(0,0,0,0.82)";
+        c.fillStyle = badge;
         c.fill();
         c.lineWidth = 1.1;
         c.strokeStyle = "#ffd166";
@@ -380,6 +390,8 @@ function buildSprite(n, lvl) {
     if (lvl > 0) D.hudTitle(t.name, CELL / 2, TILE + NAME_H / 2 + 1, nameSize(t.name, CELL - 4, 11.5), "#ffffff", "center", 1, c);
     return { cv, lvl };
 }
+
+function badgeFill() { return D.HUD.theme === "light" ? "rgba(255,255,255,0.94)" : "rgba(0,0,0,0.8)"; }
 
 function spriteFor(n, want, budget) {
     const t = n.tank;
@@ -477,7 +489,7 @@ export function draw(c, w, h) {
     c.fillRect(0, 0, W, H);
     const ready = D.ready() && ensureGraph();
     if (ready) {
-        const col = D.playerColor();
+        const col = D.playerColor() + "|" + D.HUD.theme;
         if (col !== sprColor) { sprColor = col; clearSprites(); }
         if (dirty || String(D.tankType()) !== curKey) relayout(false);
         step(dt);
@@ -548,9 +560,10 @@ function drawTree(c) {
             const cw = Math.max(16, 22 * z), ch = Math.max(11, 14 * z);
             const bx = sx + s - cw * 0.7, by = sy + s - ch * 0.7;
             D.rr(c, bx, by, cw, ch, ch / 2);
-            c.fillStyle = dim ? "rgba(30,30,30,0.85)" : "rgba(0,0,0,0.85)";
+            c.fillStyle = badgeFill();
             c.fill();
-            D.hudTitle(plusLabel(hk), bx + cw / 2, by + ch / 2, Math.max(8, 9.5 * z), "#ffffff", "center", dim ? 0.7 : 1, c);
+            if (D.HUD.theme === "light") { c.lineWidth = 1; c.strokeStyle = "rgba(0,0,0,0.25)"; c.stroke(); }
+            D.hudTitle(plusLabel(hk), bx + cw / 2, by + ch / 2, Math.max(8, 9.5 * z), D.HUD.head, "center", dim ? 0.7 : 1, c);
         }
     }
     const ring = (i, col, lwR) => {
@@ -563,6 +576,7 @@ function drawTree(c) {
         c.strokeStyle = col;
         c.stroke();
     };
+    for (const f of foundIdx) if (f !== cur) ring(f, D.HUD.theme === "light" ? "#1f8fd6" : "#7fd8ff", Math.max(2, 3.5 * z));
     ring(cur, D.HUD.gold, Math.max(2, 3.5 * z));
     if (sel >= 0 && sel !== cur) ring(sel, "#ffffff", Math.max(1.5, 2.5 * z));
     if (hover >= 0 && hover !== sel && hover !== cur) ring(hover, "rgba(255,255,255,0.7)", Math.max(1.5, 2 * z));
@@ -637,7 +651,8 @@ function ensureSearch() {
             e.stopPropagation();
             if (searchEl.value) { searchEl.value = ""; searchQ = ""; paintSearch(); return; }
             searchEl.blur();
-            global.tankTree("exit");
+            if (found) setWhole(false);
+            else global.tankTree("exit");
             return;
         }
         if (e.key === "Enter") {
@@ -666,13 +681,13 @@ function tankMatches(q) {
 }
 function jumpTo(name) {
     if (!g) return;
-    const q = String(name).toLowerCase();
-    let i = -1;
-    for (const n of g.inst) if (n.tank.name.toLowerCase() === q) { i = n.i; break; }
-    if (i < 0) return;
-    if (!vis || !vis[i]) { if (!whole) { whole = true; relayout(false); } }
-    sel = i;
-    centreOn(i, 0.9);
+    const hits = L.instsNamed(g, name);
+    if (!hits.length) return;
+    found = g.inst[hits[0]].tank.name; foundIdx = hits;
+    whole = false;
+    expanded = new Map();
+    sel = -1; tip = null;
+    relayout(true);
     if (listEl) listEl.style.display = "none";
     try { if (global.canvas && global.canvas.cv) global.canvas.cv.focus(); } catch (e) { /* */ }
 }
@@ -729,7 +744,7 @@ function drawHeader(c, ready) {
     const bx = W - 12 - closeW;
     drawButton(c, 0, bx, by, closeW, bh, "X", D.HUD.danger, mob ? 20 : 17);
     if (ready) {
-        const l1 = whole ? "Your path" : "Whole tree";
+        const l1 = whole || found ? "Your path" : "Whole tree";
         const w1 = D.hudTitleW(l1, 15) + 26;
         drawButton(c, 1, bx - 10 - w1, by, w1, bh, l1, "#3f7fd8", 15);
         const l2 = "Find me";
@@ -738,7 +753,7 @@ function drawHeader(c, ready) {
     } else { btn[6] = 0; btn[10] = 0; }
     placeSearch(ready);
     D.hudTitle("Tank Tree", W / 2, W >= 900 ? (mob ? 17 : 19) : hh / 2, mob ? 19 : 22, D.HUD.head, "center", 1, c);
-    const sub = !ready ? "" : whole ? "Every tank in the game. Zoom in to read the names." : "Your path is gold. Faded tanks are the other choices.";
+    const sub = !ready ? "" : found ? (foundIdx.length > 1 ? "All " + foundIdx.length + " ways to get " + found + ". Esc goes back." : "The way to get " + found + ". Esc goes back.") : whole ? "Every tank in the game. Zoom in to read the names." : "Your path is gold. Faded tanks are the other choices.";
     if (sub && W >= 1180) D.hudTitle(sub, W / 2, mob ? 38 : 42, mob ? 11 : 13, "#d8d8d8", "center", 1, c);
     if (ready) {
         const hint = mob ? HINT_TOUCH : HINT;

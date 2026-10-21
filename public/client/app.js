@@ -5614,7 +5614,7 @@ import * as tankRecords from './tankRecords.js';
         if (instance.id === gui.playerid || !instance.nameplate) return top;
         if (m && m.className && String(m.className).startsWith("royale")) return Math.min(top, y - size - 44);
         if (global.GUIStatus.renderPlayerNames) {
-            const ny = y - g * (global.GUIStatus.renderPlayerScores ? 1.9 : 1.45);
+            const ny = y - g * (global.GUIStatus.renderPlayerScores ? 2.02 : 1.45);
             // far plates are drawn smaller (drawName sets _plateK this frame)
             const pk = instance._plateK || 1;
             top = Math.min(top, ny - 0.56 * g * pk);            // name cap height and the badge top
@@ -5755,8 +5755,8 @@ import * as tankRecords from './tankRecords.js';
         const num = bd.icon === "flame" ? bd.num : "";
         const cv = document.createElement("canvas");
         let c = cv.getContext("2d");
-        const fs = Math.round(d * 0.72);
-        c.font = fs + "px " + HUD.font;
+        const fs = Math.round(d * 0.84);
+        c.font = "bold " + fs + "px " + HUD.font;
         const nw = num ? Math.ceil(c.measureText(num).width) + Math.round(d * 0.12) : 0;
         cv.width = d + nw + pad * 2; cv.height = d + pad * 2;
         c = cv.getContext("2d");
@@ -5810,8 +5810,8 @@ import * as tankRecords from './tankRecords.js';
                 c.font = "bold " + fs + "px " + HUD.font;
                 c.textBaseline = "middle"; c.textAlign = "left";
                 const tx = pad + d + Math.round(d * 0.08), ty = cy + d * 0.04;
-                c.lineWidth = fs * 0.24; c.strokeStyle = ink; c.strokeText(num, tx, ty);
-                c.fillStyle = HUD.head; c.fillText(num, tx, ty);
+                c.lineWidth = Math.max(1.5, fs * 0.14); c.strokeStyle = ink; c.strokeText(num, tx, ty);
+                c.fillStyle = "#ffffff"; c.fillText(num, tx, ty);
             }
         }
         spr = { cv, d, pad };
@@ -5841,13 +5841,13 @@ import * as tankRecords from './tankRecords.js';
         const size = isize * ratio;
         // on the name row (drawName left its right edge this frame), else beside the hull
         const onName = tagOnName(instance);
-        const d = onName ? Math.max(14, instance._nameFs * 1.3) : selfTagD(isize, ratio);
+        const d = onName ? Math.max(12, instance._nameFs * 0.95) : selfTagD(isize, ratio);
         const ds = c._tf ? tfOf(c).a : 1;
         const spr = tagIconSprite(bd, d * ds);
         const k = d / spr.d;
         const w = spr.cv.width * k, h = spr.cv.height * k;
         let bx, by;
-        if (onName) { bx = instance._nameRight + d * 0.22 - spr.pad * k; by = instance._nameMid - h / 2; }
+        if (onName) { bx = instance._nameRight + instance._nameFs * 0.4 - spr.pad * k; by = instance._nameMid - h / 2; }
         else { const top = nameStackTop(instance, y, ratio, isize); bx = x - d / 2 - spr.pad * k; by = top - 2 - d - spr.pad * k; }
         bx = Math.max(4, Math.min(global.screenWidth - w - 4, bx));
         c.save();
@@ -6162,12 +6162,12 @@ import * as tankRecords from './tankRecords.js';
     // next drawText call.
     const nameFillOpts = { still: false, mid: 0, fs: 0 };
     const styledOut = { text: "", fill: null };
-    function styledName(name, nid, solid, x, size, align = "left", context = ctx[2], y = 0, centered = false) {
+    function styledName(name, nid, solid, x, size, align = "left", context = ctx[2], y = 0, centered = false, noGlyph = false) {
         const st = nid ? cosmetics.nameStyleOf(nid) : null;
         const out = styledOut;
         out.text = name; out.fill = solid;
         if (!st || !name) return out;
-        const text = cosmetics.withGlyph(name, st);
+        const text = noGlyph ? name : cosmetics.withGlyph(name, st);
         const fs = size + config.graphical.fontSizeBoost;
         const still = !!(global.lowFx || config.graphical.fewerEffects);
         const fx = cosmetics.nameFx(st, { still });
@@ -6192,7 +6192,7 @@ import * as tankRecords from './tankRecords.js';
     // two halo strokes, a stroke and a pattern fill every frame, soft at the
     // edges). Scrolling or pulsing styles still draw direct. Returns the
     // drawn width (glyph included), so callers needn't measure again.
-    function drawPlateName(name, nid, solid, x, y, size, c) {
+    function drawPlateName(name, nid, solid, x, y, size, c, noGlyph = false) {
         const st = nid ? cosmetics.nameStyleOf(nid) : null;
         if (!st || !name) {
             drawText(name, x, y, size, solid, "center", false, 1, true, c);
@@ -6203,15 +6203,15 @@ import * as tankRecords from './tankRecords.js';
         const anim = !still && (s.kind === "scroll" || s.kind === "prism" || (!!s.pulse && !config.graphical.noGlow));
         const t = c._tf ? tfOf(c) : null;
         if (anim || !t || t.b || t.c || crispOff || !(t.a > 0)) {
-            const sn = styledName(name, nid, solid, x, size, "center", c, y);
+            const sn = styledName(name, nid, solid, x, size, "center", c, y, false, noGlyph);
             drawText(sn.text, x, y, size, sn.fill, "center", false, 1, true, c);
             return measureText(sn.text, size);
         }
         const sc = spriteScale(t.a), q = spriteSize(size);
-        const key = "\u0001" + name + "|" + nid + "|" + q + "|" + solid + "|" + sc + "|" + (config.graphical.noGlow ? 1 : 0) + (still ? 1 : 0);
+        const key = "\u0001" + name + "|" + nid + "|" + q + "|" + solid + "|" + sc + "|" + (config.graphical.noGlow ? 1 : 0) + (still ? 1 : 0) + (noGlyph ? 1 : 0);
         let e = textSprites.get(key);
         if (!e) {
-            const text = cosmetics.withGlyph(name, st);
+            const text = noGlyph ? name : cosmetics.withGlyph(name, st);
             const fs = q + config.graphical.fontSizeBoost;
             const w = measureText(text, q);
             const pad = fs * 0.6 + 4, W = w + pad * 2, H = fs * 2.6 + 8;
@@ -6221,7 +6221,7 @@ import * as tankRecords from './tankRecords.js';
             g.setTransform(1, 0, 0, 1, 0, 0);
             g.clearRect(0, 0, cv.width, cv.height);
             g.scale(sc, sc);
-            const sn = styledName(name, nid, solid, pad, q, "left", g, H / 2);
+            const sn = styledName(name, nid, solid, pad, q, "left", g, H / 2, false, noGlyph);
             drawTextDirect(sn.text, pad, H / 2, q, sn.fill, "left", false, 1, true, g);
             e = { cv, w, W, H, X0: pad, Y0: H / 2, pw, ph, used: textFrame };
             if (textSprites.size > 700) { let n = 0; for (const [kk, old] of textSprites) { textSprites.delete(kk); freeSprite(old); if (++n >= 150) break; } }
@@ -6288,21 +6288,16 @@ import * as tankRecords from './tankRecords.js';
                 instance._plateA = step === 0 ? 1 : step === 1 ? 0.8 : 0.62;
                 ctx[1].globalAlpha = alpha * alpha * fade * instance._plateA;
                 if (global.GUIStatus.renderPlayerNames) {
-                    const ny = y - g * (global.GUIStatus.renderPlayerScores ? 1.9 : 1.45);
+                    const ny = y - g * (global.GUIStatus.renderPlayerScores ? 2.02 : 1.45);
                     const fsz = 0.55 * g * pk;
                     // name first; the rank badge small, just left of it; the two
                     // centred over the hull as one
                     const bk = 0.95;
                     const code = nameBadgeCode(instance.rankCode, false), nx = x + nameBadgeRoom(code, fsz, bk) / 2;
-                    const tw = drawPlateName(name, instance.nameStyle, namecolor == "#ffffff" ? color.guiwhite : namecolor, nx, ny, fsz, ctx[1]);
+                    const tw = drawPlateName(name, instance.nameStyle, namecolor == "#ffffff" ? color.guiwhite : namecolor, nx, ny, fsz, ctx[1], !!badgeOf(instance.id));
                     drawNameBadge(code, name, nx, ny, fsz, "center", ctx[1], false, bk, tw);
                     // where the name ends: the tag icon (drawStreakBadge) sits right of it
-                    instance._nameRight = nx + tw / 2; instance._nameMid = ny - fsz * 0.36; instance._nameFs = fsz; instance._nameAt = overheadFrame;
-                    // won a raid in the last 24 h: a small crown after the name
-                    if (royaleActive() && crowns.isChamp(instance.id)) {
-                        try { crowns.drawCrownIcon(ctx[1], nx + tw / 2 + 0.5 * g * pk, ny - 0.2 * g * pk, 0.5 * g * pk, "gold", 1); } catch (e) { /* */ }
-                        instance._nameRight += 0.75 * g * pk;
-                    }
+                    instance._nameRight = nx + tw / 2; instance._nameMid = ny - 0.35 * (fsz + config.graphical.fontSizeBoost); instance._nameFs = fsz; instance._nameAt = overheadFrame;
                     // duos: a small chevron in your team colour over your partner
                     // (it takes the tag spot: badgeOf gives a partner no tag)
                     if (isDuoMate(instance.id)) drawMateChevron(ctx[1], x, ny, g, pk);
@@ -12762,7 +12757,7 @@ import * as tankRecords from './tankRecords.js';
         const rowH = 28;
         let headH = 0;
         if (tab === "standings") {
-            drawText(scoreText.RULE + ". Banked gems are safe.", x + 18, y + 16, 12, HUD.text2, "left");
+            drawText(scoreText.RULE + ". Banked points are safe.", x + 18, y + 16, 12, HUD.text2, "left");
             headH = 22;
         }
         const meHex = playerHexCol() || color.gold;
@@ -15568,7 +15563,7 @@ import * as tankRecords from './tankRecords.js';
         // is reached from the homepage.
 
         setInterval(() => {
-            const show = (global.gameStart && !global.died && !global.disconnected) ? "flex" : "none";
+            const show = (global.gameStart && !global.died && !global.disconnected && !global.showTree) ? "flex" : "none";
             btn.style.display = show;
             if (fsBtn) {
                 fsBtn.style.display = show;

@@ -572,6 +572,8 @@ function stepAside() {
     if (global.hudCalloutUp && !lowTouch()) return true;
     // the storm banner (stormFx.js) takes the top middle
     if (now() - (global.stormBannerAt || -1e9) < 250) return true;
+    // and so does the Save & leave countdown (saveCode.js)
+    if (global.saveBarUp) return true;
     if (sh.onPad && !sh.dismissed) return true;
     // the tank picker and the stat panel cover the middle of a phone
     if (global.mobile && (global.touchTilesOpen || global.touchPanelRight > 0) && lowTouch()) return true;

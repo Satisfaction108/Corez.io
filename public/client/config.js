@@ -109,7 +109,7 @@ import { global } from "./global.js";
 global.tips = [[
         "Tip: You can rebind any key in Settings > Keybinds."
     ], [
-        "Tip: Banked gems are safe. What you're carrying drops when you die.",
+        "Tip: You respawn with 60% of your banked gems. What you're carrying drops when you die.",
         "Tip: Laggy? Turn on Fewer effects or Simple terrain in Settings.",
         "Tip: Mining Power makes you break rock much faster, so fill it early.",
         "Tip: Your base works as a bank too, but you only keep 80%.",

@@ -4880,11 +4880,10 @@ body.mobile #dwWelcome { padding: calc(16px + var(--sa-t)) calc(12px + var(--sa-
     align-items: center;
     gap: 12px;
     padding: 8px 18px 8px 10px;
-    border: 1px solid #120e16;
-    border-radius: 14px;
-    background: #2b2533;
-    box-shadow: inset 0 -4px 0 #1e1924, 0 3px 0 rgba(0,0,0,.45);
-    color: #fff3d9;
+    border: 0;
+    border-radius: 8px;
+    background: rgba(0,0,0,.5);
+    color: #ffffff;
     pointer-events: none;
     opacity: 0;
     transform: translate(-50%, -8px);
@@ -4893,12 +4892,17 @@ body.mobile #dwWelcome { padding: calc(16px + var(--sa-t)) calc(12px + var(--sa-
 #dwSaveBar.show { opacity: 1; transform: translate(-50%, 0); }
 #dwSaveBar .sv-ring { width: 44px; height: 44px; flex-shrink: 0; transform: rotate(-90deg); }
 #dwSaveBar .sv-ring circle { fill: none; stroke-width: 4.5; }
-#dwSaveBar .sv-ring-bg { stroke: #1e1924; }
+#dwSaveBar .sv-ring-bg { stroke: rgba(255,255,255,.18); }
 #dwSaveBar .sv-ring-fg { stroke: #4fcf5c; stroke-linecap: round; transition: stroke-dashoffset .1s linear; }
-#dwSaveBar .sv-ring-n { transform: rotate(90deg); transform-origin: 20px 20px; fill: #fff3d9; font: 400 15px 'Lilita One', Rubik, sans-serif; }
+#dwSaveBar .sv-ring-n { transform: rotate(90deg); transform-origin: 20px 20px; fill: #ffffff; font: 400 15px 'Lilita One', Rubik, sans-serif; }
 #dwSaveBar .sv-txt { display: flex; flex-direction: column; gap: 3px; }
 #dwSaveBar .sv-txt b { font: 400 19px/1 'Lilita One', Rubik, sans-serif; letter-spacing: .02em; }
-#dwSaveBar .sv-sub { font: 500 12px/1.2 Rubik, Ubuntu, sans-serif; color: #a597b0; }
+#dwSaveBar .sv-sub { font: 500 12px/1.2 Rubik, Ubuntu, sans-serif; color: #cfcfcf; }
+[data-theme="light"] #dwSaveBar { background: rgba(255,255,255,.95); color: #1f1f1f; box-shadow: 0 0 0 1px rgba(0,0,0,.16); }
+[data-theme="light"] #dwSaveBar .sv-ring-bg { stroke: rgba(0,0,0,.12); }
+[data-theme="light"] #dwSaveBar .sv-ring-fg { stroke: #2b8a2c; }
+[data-theme="light"] #dwSaveBar .sv-ring-n { fill: #1f1f1f; }
+[data-theme="light"] #dwSaveBar .sv-sub { color: #555555; }
 body.mobile #dwSaveBar { top: calc(max(8px, env(safe-area-inset-top)) + 56px); }
 .sv-modal { text-align: center; }
 .sv-code {

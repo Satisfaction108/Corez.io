@@ -334,7 +334,7 @@ test('client: slams and the death card agree with the HUD', () => {
     const sl = fs.readFileSync(path.join(CLIENT, 'scoreLogic.js'), 'utf8');
     assert.ok(/scoreText\.cardPoints\(you\)/.test(app) && /\["BANKED THIS RAID", num\(pt\.b\), "gem"\]/.test(sl), 'points come from the same parts');
     assert.ok(!/CARRIED \(50% PTS\)/.test(app), 'no half-points satchel tile');
-    assert.ok(!/extras\.push\(dln\.savings\)/.test(app) && /savings from earlier raids/.test(sl), 'the savings sentence is not on the card');
+    assert.ok(!/extras\.push\(dln\.savings\)/.test(app) && /You keep 60% for your next life/.test(sl), 'the savings sentence is not on the card');
 });
 
 test('client: the coach never steps back and a bank finishes mining', () => {

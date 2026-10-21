@@ -525,7 +525,7 @@ function dropGemsOnDeath(body, killers = []) {
         try { after = bankMod().takeDeathLoss(body.socket, raidBankLoss); } catch { /* */ }
         setBanked(body, after);
         if (after > 0) {
-            try { body.socket.talk('m', 6000, "You kept " + after.toLocaleString('en-US') + " banked gems for your next life (your leaderboard score is safe)."); } catch { /* */ }
+            try { body.socket.talk('m', 6000, "You kept 60% of your banked gems (" + after.toLocaleString('en-US') + ") for your next life. Your leaderboard score is safe."); } catch { /* */ }
         }
     }
     if (carried <= 0 && bankLoss <= 0) {

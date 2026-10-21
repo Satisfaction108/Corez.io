@@ -13,6 +13,7 @@
 - Storm Circle now closes in from the edge of the map over 3 minutes.
 - King of the Vault always pays while you are inside it. If someone else is on the hill, everyone on it earns half.
 - Reloading the page puts you right back where you were, without the drop animation.
+- When you die, you now respawn with 60% of your banked gems instead of a small starter amount. Your points and carried gems work the same as before.
 - Fixed the question mark tooltips not showing on Mac screens.
  - psst try out light mode :D
 

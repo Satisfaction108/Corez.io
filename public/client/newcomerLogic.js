@@ -285,7 +285,7 @@ export function keptLine(k) {
     if (kept > 0) {
         const frac = kept / (kept + lost);
         const head = Math.abs(frac - 0.5) < 0.08 ? "You kept half your satchel." : frac > 0.97 ? "You kept your whole satchel." : "You kept " + fmt(kept) + " gems from your satchel.";
-        return head + (banked > 0 ? " Your bank is safe too." : "");
+        return head + (banked > 0 ? " You kept " + fmt(banked) + " banked gems too." : "");
     }
     if (banked > 0) return "You kept your " + fmt(banked) + " banked gems." + (lost > 0 ? " Your satchel dropped." : "");
     if (lost > 0) return "You had nothing banked, so your gems dropped.";

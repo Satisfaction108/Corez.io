@@ -253,8 +253,8 @@ function onSpawn(body, isRespawn, t = now()) {
     if (isRespawn && !st.respawned) {
         st.respawned = true;
         const sub = kept > 0
-            ? "You kept " + kept.toLocaleString('en-US') + " gems. Bank them at a vault and they're safe for good."
-            : "Your banked gems are still safe, so mine some more and bank them.";
+            ? "You kept " + kept.toLocaleString('en-US') + " gems. Bank them at a vault and they count as points for good."
+            : "You kept 60% of your banked gems, so mine some more and bank them.";
         say(body, 'nx', aoWorld() ? "Back in the game" : "Back in the raid", sub, 4500);
     }
 }

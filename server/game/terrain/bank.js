@@ -14,9 +14,9 @@
 //              the bank goes back, capped at banks.CAP
 //   newRaid    a new raid on the same socket: the bank stays, trimmed to the
 //              cap, and all of it now counts as brought in
-// deathLoss off by default (banked gems are always safe); with
-//              ROYALE_SAVINGS_DEATH_LOSS=1 dying costs DEATH_SHARE of the
-//              savings (the kept part brought in from
+// deathLoss on by default: dying costs DEATH_SHARE of the banked gems, so
+//              the next life starts with the rest. ROYALE_SAVINGS_DEATH_LOSS=0
+//              turns it off
 //
 // The 45 s resume carries the lease inside the snapshot (dig_royale
 // saveResume copies socket fields), so a reconnect keeps the same gems and
@@ -30,12 +30,10 @@
 const crypto = require('crypto');
 
 const CHECKPOINT_MS = 15 * 1000;
-const DEATH_SHARE = 0.75;       // On death, you keep 25% of your banked gems as a starter stash for the next life
+const DEATH_SHARE = 0.4;        // On death, you keep 60% of your banked gems for the next life
 const DEATH_MAX = 50000;
 const SESSION_KEEP_SHARE = 0.25;
 const SESSION_KEEP_MAX = 800;
-// Dying trims banked shop gems down to a 25% starter stash (up to 800) so
-// every life starts hungry while still rewarding your previous life's banking.
 let deathLossOn = process.env.ROYALE_SAVINGS_DEATH_LOSS !== '0';
 function setDeathLoss(v) { deathLossOn = !!v; }
 function deathLossEnabled() { return deathLossOn; }
@@ -162,11 +160,10 @@ function deathLossFor(body) {
     try { if (require('./fairPlay.js').isProtected(body)) return 0; } catch { /* */ }
     const b = Math.max(0, (body.socket.gemBanked || 0) | 0);
     if (b <= 0) return 0;
-    const keepStarter = Math.min(SESSION_KEEP_MAX, Math.round(b * (1 - DEATH_SHARE)));
-    return Math.max(0, Math.min(DEATH_MAX, b - keepStarter));
+    return Math.max(0, Math.min(DEATH_MAX, b - Math.round(b * (1 - DEATH_SHARE))));
 }
 
-// Takes a death's loss off the bank, leaving the starter portion for the next life
+// Takes a death's loss off the bank, leaving the rest for the next life
 function takeDeathLoss(socket, loss) {
     if (!socket) return 0;
     const b = Math.max(0, (socket.gemBanked || 0) | 0);

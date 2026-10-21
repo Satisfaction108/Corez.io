@@ -160,6 +160,27 @@ export function focusOpen(g, cur, expanded, budget = 24) {
     return open;
 }
 
+export function instsNamed(g, name) {
+    const q = String(name || "").toLowerCase(), out = [];
+    if (!g || !q) return out;
+    for (const n of g.inst) if (n.tank.name.toLowerCase() === q) out.push(n.i);
+    return out;
+}
+
+export function pathsTo(g, targets, expanded) {
+    const N = g.inst.length;
+    const open = new Uint8Array(N), on = new Uint8Array(N), user = new Uint8Array(N), vis = new Uint8Array(N);
+    for (const t of targets) for (const p of pathOf(g, t)) { on[p] = 1; if (p !== t) open[p] = 1; }
+    if (expanded) for (const [i, v] of expanded) if (i >= 0 && i < N) { open[i] = v ? 1 : 0; user[i] = v ? 1 : 0; }
+    for (let i = 0; i < N; i++) {
+        const p = g.inst[i].parent;
+        vis[i] = p === -1 ? on[i] : (vis[p] && open[p] && (on[i] || user[p]) ? 1 : 0);
+    }
+    const onSet = new Set();
+    for (let i = 0; i < N; i++) if (on[i] && vis[i]) onSet.add(i);
+    return { open, vis, on: onSet };
+}
+
 export function allOpen(g) {
     const open = new Uint8Array(g.inst.length);
     open.fill(1);
@@ -219,10 +240,10 @@ export function layout(g, open, vis, bands) {
         const px = cx(i), pb = bottom(i);
         const barY = pb + (ROW - TILE - NAME_H) * 0.42;
         let lo = px, hi = px, stackX = null, stackBot = 0;
-        let hiKid = -1;
+        const hiKids = [];
         for (const k of kids) {
             const kn = g.inst[k];
-            if (hiSet && hiSet.has(k)) hiKid = k;
+            if (hiSet && hiSet.has(k)) hiKids.push(k);
             if (kn.stacked) {
                 const lx = kn.x + TILE / 2;
                 stackX = lx;
@@ -237,9 +258,9 @@ export function layout(g, open, vis, bands) {
         segs.push(px, pb, px, barY);
         if (hi > lo) segs.push(lo, barY, hi, barY);
         if (stackX != null) segs.push(stackX, barY, stackX, stackBot);
-        if (hiKid >= 0) {
-            const kn = g.inst[hiKid], kx = cx(hiKid);
-            hiSegs.push(px, pb, px, barY);
+        if (hiKids.length) hiSegs.push(px, pb, px, barY);
+        for (const hk of hiKids) {
+            const kn = g.inst[hk], kx = cx(hk);
             if (kx !== px) hiSegs.push(px, barY, kx, barY);
             hiSegs.push(kx, barY, kx, kn.stacked ? kn.y + TILE / 2 : kn.y);
         }
@@ -289,7 +310,7 @@ export function layout(g, open, vis, bands) {
     } else {
         sx = 0; top = 0; topTier = 1;
         let mt = 1;
-        for (const r of g.roots) { place(r); bound(r); edges(r, hiSet); mt = Math.max(mt, maxTierBelow(r)); }
+        for (const r of g.roots) { if (!vis[r]) continue; place(r); bound(r); edges(r, hiSet); mt = Math.max(mt, maxTierBelow(r)); }
         rowsFor(1, mt, 0);
     }
     for (let i = 0; i < N; i++) if (!vis[i]) { g.inst[i].x = -1e9; g.inst[i].y = -1e9; }

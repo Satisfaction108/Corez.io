@@ -758,7 +758,7 @@ const CHAPTERS = [
                 title: () => global.vault.onPad ? "Deposit" : "Bank your gems",
                 text: () => global.vault.onPad
                     ? "Stay on the pad until the bar fills. Getting hit cancels it."
-                    : "*Banked* gems are safe when you die. Drive onto the rainbow vault.",
+                    : "*Banked* gems count as points, and you keep *60%* of them when you die. Drive onto the rainbow vault.",
                 hint: () => global.vault.onPad
                     ? "Hit *Bank all* in the panel."
                     : "Follow the arrow to the rainbow pad.",
@@ -1130,7 +1130,7 @@ const CHAPTERS = [
             {
                 id: "dying", next: true,
                 title: "Dying",
-                text: "Dying drops *70%* of what you're carrying, but your bank is safe. *Respawn* after *3 seconds* drops you back in, at your base if you have one.",
+                text: "Dying drops *70%* of what you're carrying, and you respawn with *60%* of your banked gems. *Respawn* after *3 seconds* drops you back in, at your base if you have one.",
                 praise: "OK",
             },
             {

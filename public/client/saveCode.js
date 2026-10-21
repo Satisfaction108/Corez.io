@@ -63,11 +63,14 @@ function paint() {
     const sub = el.querySelector(".sv-sub");
     const subTxt = global.mobile ? "Moving, shooting or getting hit cancels it." : "Moving, shooting or getting hit cancels it. Press " + keyText() + " to stop.";
     if (sub.textContent !== subTxt) sub.textContent = subTxt;
+    const top = Math.max(global.mobile ? 64 : 56, Math.round((global.hudTopPx | 0) + 8)) + "px";
+    if (el.style.top !== top) el.style.top = top;
 }
 
 function showBar(on) {
     const el = bar();
     el.classList.toggle("show", !!on);
+    global.saveBarUp = !!on;
 }
 
 function toggle() {

@@ -387,8 +387,8 @@ export function hudNotes(push, compact) {
         if (S.toldAt !== S.gotAt && typeof global.sideToast === "function") {
             S.toldAt = S.gotAt;
             const lose = Math.max(0, S.mine.lose | 0);
-            global.sideToast(lose > 0 ? "You have a crown. If you're killed, you lose " + lose.toLocaleString("en-US") + " pts. Banked gems stay safe."
-                : "You have a crown. If you're killed, you lose it, but banked gems stay safe.", "crown");
+            global.sideToast(lose > 0 ? "You have a crown. If you're killed, you lose " + lose.toLocaleString("en-US") + " pts. Banked points stay safe."
+                : "You have a crown. If you're killed, you lose it, but banked points stay safe.", "crown");
         }
         // coach.js: its card steps aside while a new crown's card has the top
         if (cardFresh()) global.crownCardAt = performance.now();
