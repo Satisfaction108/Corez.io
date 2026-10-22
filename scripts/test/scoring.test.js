@@ -167,7 +167,7 @@ test('formula: points = banked + kills & bonuses + crowns; carried gems are not 
     assert.ok(scoreOf(b) - b0 >= 200, 'the kill (and any bounty) to the killer: ' + (scoreOf(b) - b0));
     assert.equal(scoreOf(a), a0, 'a plain death costs no points');
     const d = ry(a.socket).you.dl;
-    assert.deepEqual(d, { p: 0, c: 3000 }, 'the death card: 0 points lost, 3,000 carried dropped');
+    assert.deepEqual(d, { p: 0, c: 3000, died: 1330 }, 'the death card: 0 points lost, 3,000 carried dropped, 1,330 died with');
 });
 
 // ── round 3, replayed ───────────────────────────────────────────────────
@@ -287,7 +287,7 @@ test('client: wired everywhere', () => {
     assert.ok(/scoreText\.tiles\(you\)/.test(app));
     assert.ok(!/dln\.head \+ " \(" \+ dln\.lost \+ "\)"/.test(app));
     assert.ok(!/CARRIED \(50% PTS\)/.test(app) && !/50% carried/.test(app), 'the half-points satchel is gone from the HUD');
-    assert.ok(/drawText\("points", cx,/.test(app), 'the card calls it points, like the standings');
+    assert.ok(/drawText\(atDeath \? "points at death" : "points", cx,/.test(app), 'the card names the number (at death, not the halved board score)');
     // the rule on hover (standings, the clock plate's points) and in the F tab
     assert.ok(/queueTip\(scoreText\.RULE, scoreText\.ruleBody\(aoNow\(\)\)/.test(app));
     assert.ok((app.match(/pointsRuleTip\(/g) || []).length >= 4, 'standings, crown tracker, clock plate + the helper');

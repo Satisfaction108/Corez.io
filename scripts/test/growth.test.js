@@ -11,6 +11,8 @@
 //              the view follows size^0.45, no cap
 //   damage     a grown tank's shots (and a grown bot's) hit harder, rock
 //              digging and its budget rise by the same factor
+//   shots      drones, minions and every shell already out (sidearms,
+//              turrets) grow with the hull, at growth^0.8
 //   bots       a bot grows from twice its score (growth only, not the board)
 //   off        royale_growth false: nothing grows
 //   rammer     smasher-family caps give Mining Power 12 and the points past 9
@@ -262,18 +264,24 @@ test('rammer', () => {
     assert.ok(mining.grindSecondsFor(owner(12, 12)) < mining.grindSecondsFor(owner(9, 12)));
 });
 
-test('drones and minions already out grow with the tank, the same as fresh ones (growth^0.5)', () => {
+test('drones, minions and shots already out grow with the tank, the same as fresh ones (growth^0.8)', () => {
     const kid = (g) => ({ SIZE: 10, coreSize: 10, _growG: g, isDead: () => false });
     const a = kid(1), b = kid(1), c = kid(1.5625), shell = { SIZE: 10, coreSize: 10, isDead: () => false };
-    const turret = { guns: new Map([[2, { children: [b] }]]), turrets: new Map() };
-    const body = { growthMult: 2.25, guns: new Map([[1, { children: [a, c, shell] }]]), turrets: new Map([[3, turret]]) };
+    const sideShell = kid(1), turretShell = kid(1);
+    const side = { children: [], bulletchildren: [sideShell] };
+    const turret = { guns: new Map([[2, { children: [b], bulletchildren: [turretShell] }]]), turrets: new Map() };
+    const body = { growthMult: 2.25, guns: new Map([[1, { children: [a, c, shell], bulletchildren: [] }], [4, side]]), turrets: new Map([[3, turret]]) };
     growth.resizeKids(body);
-    assert.ok(Math.abs(a.SIZE - 15) < 1e-9 && Math.abs(a.coreSize - 15) < 1e-9, 'hull drone ' + a.SIZE);
-    assert.ok(Math.abs(b.SIZE - 15) < 1e-9, 'turret drone ' + b.SIZE);
-    assert.ok(Math.abs(c.SIZE - 12) < 1e-9, 'one made mid-growth ' + c.SIZE);
+    const big = 10 * Math.pow(2.25, 0.8);
+    assert.ok(Math.abs(a.SIZE - big) < 1e-9 && Math.abs(a.coreSize - big) < 1e-9, 'hull drone ' + a.SIZE);
+    assert.ok(Math.abs(b.SIZE - big) < 1e-9, 'turret drone ' + b.SIZE);
+    assert.ok(Math.abs(c.SIZE - 10 * Math.pow(2.25 / 1.5625, 0.8)) < 1e-9, 'one made mid-growth ' + c.SIZE);
+    assert.ok(Math.abs(sideShell.SIZE - big) < 1e-9, 'a sidearm shell in flight ' + sideShell.SIZE);
+    assert.ok(Math.abs(turretShell.SIZE - big) < 1e-9, 'a turret shell in flight ' + turretShell.SIZE);
     assert.equal(shell.SIZE, 10, 'children with no growth stamp are left alone');
     growth.resizeKids(body);
-    assert.ok(Math.abs(a.SIZE - 15) < 1e-9, 'idempotent');
+    assert.ok(Math.abs(a.SIZE - big) < 1e-9, 'idempotent');
+    assert.ok(Math.abs(sideShell.SIZE - big) < 1e-9, 'shots too');
     const gun = require('fs').readFileSync(path.join(SERVER, 'game', 'entities', 'gun.js'), 'utf8');
     assert.equal((gun.match(/o\._growG = this\.growG\(\);/g) || []).length, 2, 'every shot is stamped with the growth it was made at');
 });

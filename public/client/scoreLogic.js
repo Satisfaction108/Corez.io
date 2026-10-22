@@ -28,11 +28,20 @@ export const BANK_TIP_BODY_AO = "This includes gems from earlier days and bounti
     "Points only count what you banked today.";
 export function bankTipBody(ao) { return ao ? BANK_TIP_BODY_AO : BANK_TIP_BODY; }
 
-// The one points number the death card shows (header and the "Points: X" line
+// The one points number the death card shows (header and the "Points: X" line)
 export function cardPoints(you) {
     const y = you || {};
     if (typeof y.score === "number" && isFinite(y.score)) return Math.max(0, Math.round(y.score));
     return parts(y).total;
+}
+
+// The death card's headline: what you had when you died, before the halving
+// (the board keeps the halved score). Older packets have no `died`.
+export function diedPoints(you) {
+    const y = you || {};
+    const d = y.dl && y.dl.died;
+    if (typeof d === "number" && isFinite(d)) return Math.max(0, Math.round(d));
+    return cardPoints(y);
 }
 
 // > { b, k, c, total, earned, stolen } from RY you (old servers without `pts`

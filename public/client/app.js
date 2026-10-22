@@ -43,6 +43,7 @@ import * as deathText from './deathCardLogic.js';
 import * as buildBtnLabels from './buildButtonsLogic.js';
 import { layoutLabels } from './labelLayout.js';
 import * as chatPanel from './chatPanelLogic.js';
+import { emojiOnly } from './emoji.js';
 import * as upGrid from './upgradeGridLogic.js';
 import * as treeUi from './tankTree.js';
 import { netSmooth } from './netSmooth.js';
@@ -8975,6 +8976,7 @@ import * as tankRecords from './tankRecords.js';
     // row so the keyboard never covers it.
     const chatVis = [], chatLays = [];
     const CHAT_FS = 12.5, CHAT_LH = 16, CHAT_PAD_X = 10, CHAT_PAD_Y = 7;
+    const CHAT_LH_JUMBO = 30;   // an emoji-only line, Discord style
     function chatNameHex(line) {
         if (line._hex) return line._hex;
         let raw = null;
@@ -8996,6 +8998,13 @@ import * as tankRecords from './tankRecords.js';
         const name = chatPanel.shortName(line.name) + ":";
         const tagW = tag ? hudTitleW(tag, fs) + 5 : 0;
         const nameW = hudTitleW(name, fs) + 5;
+        // emoji only: the name stays, the emoji come out big (Discord style)
+        const em = emojiOnly(line.text);
+        if (em) {
+            line._lay = { tag, name, tagW, nameW, lines: [em.join("  ")], jumbo: true };
+            line._layKey = key;
+            return line._lay;
+        }
         const lines = chatPanel.wrapMessage(line.text, tagW + nameW, textW, s => hudTitleW(s, fs));
         line._lay = { tag, name, tagW, nameW, lines };
         line._layKey = key;
@@ -9101,10 +9110,11 @@ import * as tankRecords from './tankRecords.js';
         let rows = 0;
         const lays = chatLays;
         lays.length = 0;
-        for (const v of vis) { const L = chatLineLayout(v.line, textW, fs); lays.push(L); rows += L.lines.length; }
-        const heightFor = (n) => CHAT_PAD_Y * 2 + n * lh + (rowH ? (n ? 6 : 0) + rowH : 0);
+        const layH = (L) => L.jumbo ? CHAT_LH_JUMBO : L.lines.length * lh;
+        for (const v of vis) { const L = chatLineLayout(v.line, textW, fs); lays.push(L); rows += layH(L); }
+        const heightFor = (n) => CHAT_PAD_Y * 2 + n + (rowH ? (n ? 6 : 0) + rowH : 0);
         let first = 0;
-        while (first < vis.length && y + heightFor(rows) > floor) { rows -= lays[first].lines.length; first++; }
+        while (first < vis.length && y + heightFor(rows) > floor) { rows -= layH(lays[first]); first++; }
         if (!rows && !rowH) { chatInputHide(); return; }
         // nothing said lately: just the "Enter to chat" chip, at the right edge
         if (!rows && showHint) { const cw = Math.round(chatHintW() + CHAT_PAD_X * 2 + 4); x += W - cw; W = cw; }
@@ -9131,6 +9141,11 @@ import * as tankRecords from './tankRecords.js';
             if (L.tag) { hudTitle(L.tag, lx, ly, fs, lightChat ? mixHex(teamHex, "#000000", 0.45) : teamHex, "left", a); lx += L.tagW; }
             hudTitle(L.name, lx, ly, fs, lightChat ? mixHex(chatNameHex(v.line), "#000000", 0.45) : chatNameHex(v.line), "left", a);
             lx += L.nameW;
+            if (L.jumbo) {
+                hudTitle(L.lines[0], lx, ly + (CHAT_LH_JUMBO - lh) / 2, 22, HUD.text, "left", a);
+                ly += CHAT_LH_JUMBO;
+                continue;
+            }
             for (let k = 0; k < L.lines.length; k++) {
                 if (L.lines[k]) hudTitle(L.lines[k], k ? x + CHAT_PAD_X : lx, ly, fs, HUD.text, "left", a);
                 ly += lh;
@@ -10877,19 +10892,24 @@ import * as tankRecords from './tankRecords.js';
         c.fill(); c.stroke();
         c.restore();
     }
-    // A gold ring with four ticks on the contract target; it breathes unless
-    // reduced motion is on.
+    // A ring with four ticks on the contract target; it breathes unless
+    // reduced motion is on. The colours belong to the HUD theme: gold on ink
+    // in the dark, the deeper gold on a soft white halo in the light (a black
+    // ring on a pale floor looked stuck on).
     const ringDash = [0, 0], NO_DASH = [];
     function drawContractRing(c, x, y, R, now) {
         const calm = !!(global.reducedMotion && global.reducedMotion());
         const k = calm ? 0 : 0.5 + 0.5 * Math.sin(now / 260);
         const rr = R * (1 + 0.06 * k);
+        const light = HUD.theme === "light";
+        const base = light ? "rgba(255,255,255,0.9)" : HUD.ink;
+        const accent = light ? (HUD.goldDk || "#a8750f") : HUD.gold;
         c.save();
         c.lineCap = "round";
-        c.globalAlpha = 0.9;
-        c.strokeStyle = HUD.ink; c.lineWidth = 6;
+        c.globalAlpha = light ? 0.95 : 0.9;
+        c.strokeStyle = base; c.lineWidth = 5;
         c.beginPath(); c.arc(x, y, rr, 0, Math.PI * 2); c.stroke();
-        c.strokeStyle = HUD.gold; c.lineWidth = 3;
+        c.strokeStyle = accent; c.lineWidth = 2.5;
         ringDash[0] = rr * 0.42; ringDash[1] = rr * 0.36;
         c.setLineDash(ringDash);
         c.lineDashOffset = calm ? 0 : -now / 40;
@@ -10898,10 +10918,10 @@ import * as tankRecords from './tankRecords.js';
         for (let i = 0; i < 4; i++) {
             const a = i * Math.PI / 2 + Math.PI / 4;
             const ca = Math.cos(a), sa = Math.sin(a);
-            c.strokeStyle = HUD.ink; c.lineWidth = 6;
-            c.beginPath(); c.moveTo(x + ca * (rr + 6), y + sa * (rr + 6)); c.lineTo(x + ca * (rr + 16), y + sa * (rr + 16)); c.stroke();
-            c.strokeStyle = HUD.gold; c.lineWidth = 3;
-            c.beginPath(); c.moveTo(x + ca * (rr + 6), y + sa * (rr + 6)); c.lineTo(x + ca * (rr + 16), y + sa * (rr + 16)); c.stroke();
+            c.strokeStyle = base; c.lineWidth = 5;
+            c.beginPath(); c.moveTo(x + ca * (rr + 5), y + sa * (rr + 5)); c.lineTo(x + ca * (rr + 15), y + sa * (rr + 15)); c.stroke();
+            c.strokeStyle = accent; c.lineWidth = 2.5;
+            c.beginPath(); c.moveTo(x + ca * (rr + 5), y + sa * (rr + 5)); c.lineTo(x + ca * (rr + 15), y + sa * (rr + 15)); c.stroke();
         }
         c.restore();
     }
@@ -14630,7 +14650,11 @@ import * as tankRecords from './tankRecords.js';
         const dTank = deathTankOf();
         const whoLine = who && dTank && dTank.name ? who + " · " + dTank.name : (who || (dTank && dTank.name) || "");
         const place = (you.place || (global.royale && global.royale.place) || 0) | 0;
-        const score = you.score != null || you.pts ? scoreText.cardPoints(you) : ((global.royale && global.royale.youScore) | 0);
+        // the number you died with, not the halved board score below it
+        const atDeath = !!(you.dl && you.dl.died != null);
+        const score = you.score != null || you.pts
+            ? (atDeath ? scoreText.diedPoints(you) : scoreText.cardPoints(you))
+            : ((global.royale && global.royale.youScore) | 0);
         const scoreTxt = util.formatLargeNumber(Math.round(score));
         const kills = (you.kills != null ? you.kills : global.finalKillCount) | 0;
         const lived = compactTime(global.finalLifeSecs || 0);
@@ -14651,6 +14675,8 @@ import * as tankRecords from './tankRecords.js';
         if (kept > 0) notes.push("Kept " + util.formatLargeNumber(kept));
         if (lostPts > 0) notes.push("Crown -" + util.formatLargeNumber(lostPts));
         if (you.dl && you.dl.h > 0) notes.push("Death -" + util.formatLargeNumber(you.dl.h | 0));
+        // the rule, where the Respawn button is: you drop back in with half
+        if (!lastStormCount()) notes.push("Respawn with 1/2 points");
         const noteLine = notes.join("  ·  ");
         const hasRank = !guest && rankPanel.hasContent();
         const rankH = hasRank ? rankPanel.panelHeight() : 0;
@@ -14701,7 +14727,7 @@ import * as tankRecords from './tankRecords.js';
         }
         y += 4;
         hudTitle(scoreTxt, cx, y + 16, 32, HUD.gold, "center", A);
-        drawText("points", cx, y + 40, 13, HUD.text2, "center", true, A);
+        drawText(atDeath ? "points at death" : "points", cx, y + 40, 13, HUD.text2, "center", true, A);
         y += scoreH;
         const colW = (iw - tileGap * 2) / 3;
         for (let i = 0; i < tileRows.length; i++) {

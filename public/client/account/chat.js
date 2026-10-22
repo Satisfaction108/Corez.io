@@ -7,7 +7,7 @@ import * as api from './api.js';
 import * as social from './social.js';
 import { h, icon, clear, animate, T_MID } from './ui.js';
 import { rankOf, badge, nameEl, presenceText, presenceState } from './people.js';
-import { attachEmoji } from '../emoji.js';
+import { attachEmoji, emojiOnly } from '../emoji.js';
 
 const MAX = 300;
 const GAP_MS = 15 * 60 * 1000;     // a quiet stretch this long gets a time line
@@ -135,7 +135,10 @@ export function mount(host, friend, opts) {
             const tail = !next || next.from !== m.from || next.at - m.at >= GROUP_MS;
             const cls = 'fr-msg ' + (m.from === 'me' ? 'me' : 'them') + (cont ? ' cont' : '') + (tail ? ' tail' : '') +
                 (m.state === 'sending' ? ' sending' : '') + (m.state === 'failed' ? ' failed' : '');
-            const b = h('div', { class: cls, title: when(m.at) }, h('div', { class: 'fr-bubble', text: m.body }));
+            // a message that is only emoji reads like Discord: big, no bubble
+            const jumbo = !!emojiOnly(m.body);
+            const b = h('div', { class: cls, title: when(m.at) },
+                h('div', { class: 'fr-bubble' + (jumbo ? ' jumbo' : ''), text: m.body }));
             if (fresh.has(m.id)) {
                 animate(b, [{ opacity: 0, transform: 'translateY(6px) scale(.98)' }, { opacity: 1, transform: 'none' }], { duration: T_MID });
             }

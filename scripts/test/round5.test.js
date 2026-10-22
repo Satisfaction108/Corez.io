@@ -215,7 +215,7 @@ test('two banks: the HUD says Bank (spendable), the card and results say Banked 
     assert.match(src('raidFinale.js'), /const CELL_LABEL = \["POINTS", "BANKED THIS RAID", "KILLS \+ CROWNS"\]/);
 });
 
-test('death card: the header and the Points line are one number, after the loss', async () => {
+test('death card: the header shows the points you died with, not the halved board score', async () => {
     const SL = await imp('scoreLogic.js');
     const you = { score: 3539, pts: { b: 2992, k: 175, c: 372 }, dl: { p: 230, by: 'justvibing17', cr: 1 } };
     assert.equal(SL.cardPoints(you), 3539);
@@ -224,7 +224,13 @@ test('death card: the header and the Points line are one number, after the loss'
     // whatever the parts say, the line follows the header
     assert.equal(SL.deathLine({ score: 3539, pts: { b: 3092, k: 175, c: 372 } }).head, 'Points: 3,539');
     assert.equal(SL.cardPoints({ pts: { b: 10, k: 5, c: 1 } }), 16, 'no score: the parts');
-    assert.match(src('app.js'), /const score = you\.score != null \|\| you\.pts \? scoreText\.cardPoints\(you\)/);
+    // 3000 when you died, 1500 on the board: the card says 3000
+    assert.equal(SL.diedPoints({ score: 1500, pts: { b: 1500, k: 0, c: 0 }, dl: { died: 3000, h: 1500 } }), 3000);
+    assert.equal(SL.diedPoints({ score: 1500 }), 1500, 'an older packet falls back to the score');
+    // the card says so in words, and the header is labelled for it
+    const app = src('app.js');
+    assert.match(app, /const score = you\.score != null \|\| you\.pts[\s\S]{0,120}scoreText\.diedPoints\(you\)/);
+    assert.match(app, /Respawn with 1\/2 points/);
 });
 
 test('tags: icons beside other players\' names, never one on your own tank, baked at the size drawn', () => {

@@ -3201,6 +3201,13 @@ input.dw-input.fr-add-in { flex: 1; min-width: 0; height: 42px; }
 .fr-msg.them.tail .fr-bubble { border-bottom-left-radius: 3px; }
 .fr-msg.sending .fr-bubble { opacity: .6; }
 .fr-msg.failed .fr-bubble { background: color-mix(in srgb, var(--danger) 30%, var(--face)); color: var(--text); }
+/* emoji only: Discord style, three emoji at most, no bubble */
+.fr-msg .fr-bubble.jumbo {
+    padding: 2px 0 0; border: 0; background: none; box-shadow: none;
+    font-size: 34px; line-height: 1.15; letter-spacing: .04em;
+}
+.fr-msg.me .fr-bubble.jumbo { background: none; }
+.igc .fr-msg .fr-bubble.jumbo { padding-top: 1px; font-size: 30px; }
 .fr-msg-retry {
     align-self: flex-end; margin: 3px 2px 0; padding: 0; border: 0; background: none;
     color: var(--danger-text); font: 700 11px var(--ui); cursor: pointer; animation: dwFade var(--dw-t2) var(--dw-ease) both;

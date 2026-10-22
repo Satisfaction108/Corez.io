@@ -2603,6 +2603,9 @@ function onCombatantDead(body) {
     const victimStreak = s ? (s.streak | 0) : 0;
     const victimGrowth = growth.enabled() ? (body.growthMult || 1) : 1;
     let giantPts = 0;
+    // the points on the board the moment the tank died: the death card says
+    // this, while the board goes on to halve it
+    const scoreAtDeath = s ? scoreOf(s) : 0;
     if (s) { s.alive = false; s.carried = 0; s.streak = 0; s.restoredCarry = 0; }
     // a density trim (despawnBot) is as quiet as the raid-end mass death
     const raidEndDeath = body.deathCause === "raidend" || body.deathCause === "despawn";
@@ -2727,6 +2730,7 @@ function onCombatantDead(body) {
             by: lostPts && crownRes.killer ? String(crownRes.killer.name || "Someone").slice(0, 24) : undefined,
             cr: crownRes ? 1 : undefined,
             c: carriedAtDeath | 0,
+            died: scoreAtDeath,
             run: lifeRun,
             lk: lifeKills,
             tk: String(body.label || "Basic"),

@@ -85,6 +85,23 @@ export function convert(text) {
     return text.replace(/:([a-z0-9_+-]{1,32}):/gi, (all, name) => MAP.get(name.toLowerCase()) || all);
 }
 
+const EMOJI_CHARS = /^[\p{Extended_Pictographic}\p{Emoji_Presentation}\u200d\uFE0F\uFE0E\u20E3\u{1F3FB}-\u{1F3FF}\u{1F1E6}-\u{1F1FF}]+$/u;
+// A message that is nothing but emoji, Discord style: 1-3 of them, no words.
+// Returns the emoji (one string each) or null.
+export function emojiOnly(text, max = 3) {
+    const s = String(text || "").trim();
+    if (!s || s.length > 64) return null;
+    let segs;
+    try {
+        segs = [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(s)]
+            .map(p => p.segment).filter(x => !/^\s+$/.test(x));
+    } catch (e) {
+        segs = s.split(/\s+/).filter(Boolean);
+    }
+    if (!segs.length || segs.length > max) return null;
+    return segs.every(g => EMOJI_CHARS.test(g)) ? segs : null;
+}
+
 // names that start with `q` first, then names that contain it
 export function search(q, max = 6) {
     q = String(q || "").toLowerCase();
@@ -107,11 +124,17 @@ function addStyle() {
         ".dw-emo{position:fixed;z-index:60;min-width:190px;max-width:280px;padding:4px;border-radius:10px;" +
         "background:#1e1924;border:1px solid #120e15;box-shadow:0 4px 0 rgba(0,0,0,.34);" +
         "font:600 13px/1.2 Rubik,Ubuntu,sans-serif;color:#efe6ff;display:none}" +
+        "html[data-theme=light] .dw-emo{background:#ffffff;border-color:#c9c9c9;" +
+        "box-shadow:0 3px 0 rgba(0,0,0,.16);color:#2a2a2a}" +
         ".dw-emo-row{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px;cursor:pointer;white-space:nowrap}" +
         ".dw-emo-row b{font-size:18px;font-weight:400;width:22px;text-align:center}" +
         ".dw-emo-row span{opacity:.85;overflow:hidden;text-overflow:ellipsis}" +
         ".dw-emo-row.on{background:#3a2f4a}" +
-        ".dw-emo-tip{padding:3px 8px 2px;font-size:10.5px;opacity:.5;font-weight:500}";
+        "html[data-theme=light] .dw-emo-row.on{background:rgba(224,123,46,.18)}" +
+        ".dw-emo-tip{padding:4px 8px 3px;font-size:10.5px;opacity:.62;font-weight:500}" +
+        ".dw-emo-tip kbd{font:inherit;font-weight:700;padding:1px 4px;border-radius:4px;" +
+        "background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.18)}" +
+        "html[data-theme=light] .dw-emo-tip kbd{background:rgba(0,0,0,.06);border-color:rgba(0,0,0,.14)}";
     document.head.appendChild(st);
 }
 
@@ -146,7 +169,8 @@ export function attachEmoji(input) {
         });
         const tip = document.createElement("div");
         tip.className = "dw-emo-tip";
-        tip.textContent = "Tab to pick, Esc to close";
+        const key = (t) => { const k = document.createElement("kbd"); k.textContent = t; return k; };
+        tip.append(key("Tab"), " for next, ", key("Esc"), " to close");
         box.appendChild(tip);
     };
     const take = (i) => {
@@ -164,9 +188,10 @@ export function attachEmoji(input) {
     const look = () => {
         const end = input.selectionStart;
         if (end == null) return hide();
-        const m = /(^|[\s(]):([a-z0-9_+-]{2,32})$/i.exec(input.value.slice(0, end));
+        const m = /(^|[\s(]):([a-z0-9_+-]{1,32})$/i.exec(input.value.slice(0, end));
         if (!m) return hide();
-        const found = search(m[2]);
+        // the moment you have one letter after the colon, at most 3 at a time
+        const found = search(m[2], 3);
         if (!found.length) return hide();
         items = found;
         pick = Math.min(pick, items.length - 1);

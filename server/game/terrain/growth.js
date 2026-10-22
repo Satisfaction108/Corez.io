@@ -98,10 +98,17 @@ function gunsOf(e, out, depth = 0) {
     if (e.turrets) for (const t of e.turrets.values()) gunsOf(t, out, depth + 1);
     return out;
 }
+// The shots and helpers a gun already has out: drones and minions, plus the
+// shells in flight (a sidearm's slow reload and a turret's steady fire leave
+// plenty of them up while the tank grows). Every shot is stamped with the
+// growth it was made at (gun.js), so they all catch up to the hull.
 function resizeKids(body) {
     const g = body && body.growthMult > 1 ? body.growthMult : 1;
     for (const gun of gunsOf(body, [])) {
-        for (const kid of gun.children || []) {
+        const kids = gun.bulletchildren && gun.bulletchildren.length
+            ? (gun.children || []).concat(gun.bulletchildren)
+            : gun.children || [];
+        for (const kid of kids) {
             if (!kid || kid.isGhost || !(kid._growG > 0) || kid._growG === g || (kid.isDead && kid.isDead())) continue;
             const f = Math.pow(g / kid._growG, 0.8);
             kid.SIZE *= f;

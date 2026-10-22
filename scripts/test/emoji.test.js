@@ -3,6 +3,8 @@
 //   convert   ":fire:" turns into the emoji, any case; unknown names and
 //             plain colons ("12:30", "a: b") stay as typed
 //   search    names that start with the query come first, at most 6
+//   picker    one letter after the colon is enough, at most 3 at a time
+//   jumbo     a message of 1-3 emoji and nothing else reads big (Discord)
 'use strict';
 
 const assert = require('node:assert/strict');
@@ -31,6 +33,20 @@ const { pathToFileURL } = require('url');
         assert.deepEqual(m.search(''), []);
         assert.deepEqual(m.search('zzzzqq'), []);
     });
-    console.log(failed ? failed + ' failed' : 'all 3 passed');
+    test('picker: one letter is enough, three at a time', () => {
+        const r = m.search('s', 3);
+        assert.equal(r.length, 3);
+        assert.ok(r.every(x => x.name.includes('s')));
+        assert.ok(m.search('s', 3).length <= 3);
+    });
+    test('jumbo: only emoji, one to three', () => {
+        assert.deepEqual(m.emojiOnly('💀'), ['💀']);
+        assert.deepEqual(m.emojiOnly(' 💀  ☠️ '), ['💀', '☠️']);
+        assert.equal(m.emojiOnly('💀 💀 💀 💀'), null, 'four is prose');
+        assert.equal(m.emojiOnly('gg 💀'), null);
+        assert.equal(m.emojiOnly('12:30'), null);
+        assert.equal(m.emojiOnly(''), null);
+    });
+    console.log(failed ? failed + ' failed' : 'all 6 passed');
     process.exitCode = failed ? 1 : 0;
 })();
