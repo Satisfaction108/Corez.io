@@ -21,6 +21,21 @@ export const fmt = num;
 // on the card and read as a mismatch; it is the spendable wallet, so it says so.
 export const BANK = "Spendable";
 export const BANKED_RAID = "Banked this raid";
+
+// The two bottom bars. Points is your share of the leader's score; Carried is
+// how full the satchel is. Both are 0..1, and no bar is full just because it
+// has a number in it when the leaderboard has no data yet.
+export function pointsFrac(points, topScore) {
+    const p = Math.max(0, +points || 0), top = Math.max(0, +topScore || 0);
+    if (p <= 0) return 0;
+    if (top <= 0) return 1;
+    return Math.min(1, p / top);
+}
+export function carriedFrac(carried, cap) {
+    const c = Math.max(0, +carried || 0), n = Math.max(0, +cap || 0);
+    if (c <= 0 || n <= 0) return 0;
+    return Math.min(1, c / n);
+}
 export const BANK_TIP = "Spendable: gems you can spend at shops";
 export const BANK_TIP_BODY = "This includes gems from earlier raids and bounties. Spending lowers it, but never your points. " +
     "Points only count what you banked this raid.";

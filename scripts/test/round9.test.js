@@ -226,12 +226,12 @@ test('mining chips: paid per hit out of the break payout, same total per rock; p
     assert.ok(gems.PLAIN_ROCK_MULT >= 1.25 && gems.PLAIN_ROCK_MULT <= 1.45, 'plain rock ~30% faster');
 });
 
-test('contracts: 15 s between jobs, revenge doubled; mining combo doubled', () => {
+test('contracts: 15 s between jobs, revenge doubled; mining combo capped at +25%', () => {
     assert.equal(contracts.COOLDOWN_MS, 15_000);
     assert.equal(contracts.REVENGE_GEMS, 400);
     assert.equal(contracts.REVENGE_PTS, 400);
     assert.equal(gems.COMBO_STEP, 0.1);
-    assert.equal(gems.COMBO_CAP, 1);
+    assert.equal(gems.COMBO_CAP, 0.25);
 });
 
 test('solo colour: survives a reconnect (keyed by guest/account, not socket)', () => {

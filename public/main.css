@@ -37,7 +37,7 @@ body {
 }
 
 body {
-	font-family: 'Rubik', 'Ubuntu', sans-serif;
+	font-family: 'Rubik', 'Ubuntu', 'Noto Color Emoji', sans-serif;
 	font-size: 14px;
 	background-color: #484848;
 }
@@ -227,7 +227,7 @@ input {
 	margin-top: 5px;
 	margin-bottom: 5px;
 	outline: none;
-	font-family: Rubik, Ubuntu;
+	font-family: Rubik, Ubuntu, 'Noto Color Emoji';
 	font-weight: bold;
 	background: #fff;
 	transition: border 0.3s, background 0.3s, color 0.3s;
@@ -302,7 +302,7 @@ input.error {
 	background: transparent;
 	color: #e9e0cc;
 	caret-color: #fff3d9;
-	font-family: Rubik, Ubuntu, sans-serif;
+	font-family: Rubik, Ubuntu, 'Noto Color Emoji', sans-serif;
 	font-weight: 700;
 	text-align: left;
 	transition: none;

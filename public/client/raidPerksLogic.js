@@ -7,6 +7,7 @@
 // ── the PK packet ──────────────────────────────────────────────────────
 // { o: offer cards, q: queued behind it, b: build [{id, n, max}], g: picks
 // earned, next: the score of the next one, step, v } -> a clean state.
+// There is no overall pick cap; each build entry's `max` is its tier cap (IV).
 export function parseState(raw) {
     let d = raw;
     if (typeof raw === "string") { try { d = JSON.parse(raw); } catch (e) { d = null; } }
@@ -24,7 +25,6 @@ export function parseState(raw) {
         granted: Math.max(0, d.g | 0),
         next: Math.max(0, +d.next || 0),
         step: Math.max(1, +d.step || 5000),
-        max: (d.max | 0) || 15,
         v: d.v | 0,
     };
 }
@@ -262,9 +262,9 @@ export const DEATH_LINE_AO = DEATH_LINE;
 export function deathLine(build, ao) { return totalPicks(build) > 0 ? (ao ? DEATH_LINE_AO : DEATH_LINE) : ""; }
 
 // ── the first offer's intro ────────────────────────────────────────────
-export const INTRO_TEXT = "Your first perk comes at 5,000 points and each one after takes more, up to 15. Dying halves your points, takes two random perks and starts the count over.";
+export const INTRO_TEXT = "Your first perk comes at 5,000 points and each one after costs much more. Each perk stacks to tier IV. Dying halves your points, takes two random perks and starts the count over.";
 export const INTRO_TEXT_AO = INTRO_TEXT;
 export function badgeTip(st, score) {
-    if (!(st && st.next > 0)) return "You have all " + ((st && st.max) || 15) + " perks.";
-    return "Each perk takes more points than the last, up to " + (st.max || 15) + ". Next one at " + fmtNum(st.next) + ", you have " + fmtNum(score) + ".";
+    if (!(st && st.next > 0)) return "You have every perk the raid offers.";
+    return "Each new perk costs more than the last. Next one at " + fmtNum(st.next) + ", you have " + fmtNum(score) + ".";
 }

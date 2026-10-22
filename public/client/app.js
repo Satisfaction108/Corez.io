@@ -3128,7 +3128,7 @@ import * as tankRecords from './tankRecords.js';
     function upgTileBitmap(kind, w, h, dpr, parts, paint) {
         // until Lilita One has loaded, labels rasterise in the fallback font;
         // key on it so they are redrawn once the real face arrives
-        if (!upgFontOk) { try { upgFontOk = !document.fonts || document.fonts.check('12px "Lilita One"'); } catch (e) { upgFontOk = true; } }
+        if (!upgFontOk) { try { upgFontOk = !document.fonts || document.fonts.check('12px "Lilita One", "Noto Color Emoji"'); } catch (e) { upgFontOk = true; } }
         const tail = "|" + (h / w).toFixed(3) + "|" + parts + "|" + config.graphical.fontSizeBoost + "|" + upgFontOk;
         if (!crispOff) {
             const W = Math.max(8, Math.round(w * dpr));
@@ -3869,6 +3869,13 @@ import * as tankRecords from './tankRecords.js';
         }
     }
 
+    // Base integrity reads as a health bar, not as "grey on black": green
+    // while healthy, gold as it drops, red when it is nearly gone. Used by
+    // the world ring, the UNDER ATTACK bar and both maps.
+    function baseHpCol(frac) {
+        const f = Math.max(0, Math.min(1, +frac || 0));
+        return f > 0.5 ? HUD.play : f > 0.22 ? HUD.gold : HUD.danger;
+    }
     // Dig Wars: outpost pads, octagonal foundations styled like the vault.
     // Grey while neutral, ringed in the owner's colour once a banner stands.
     // A gold arc shows capture progress on a contested neutral pad.
@@ -3927,15 +3934,15 @@ import * as tankRecords from './tankRecords.js';
                 c.fill();
                 c.lineWidth = lw * 1.6; c.strokeStyle = worldMix(hueCol, WORLD_ART.padLine); c.stroke();
                 // banner HP: the HUD bar bent into a ring round the structure
-                // (ink keyline, dark track, flat cream fill)
-                const ringR = bodyR * 1.1, bw = Math.max(4, R * 0.085);
+                // (ink keyline, dark track, bright health-colour fill)
+                const ringR = bodyR * 1.1, bw = Math.max(5, R * 0.1);
                 c.beginPath(); c.arc(0, 0, ringR, 0, Math.PI * 2);
                 c.lineWidth = bw + lw * 2; c.strokeStyle = HUD.ink; c.stroke();
                 c.lineWidth = bw; c.strokeStyle = HUD.wellSolid; c.stroke();
                 if (frac > 0.001) {
                     c.beginPath();
                     c.arc(0, 0, ringR, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
-                    c.lineCap = "round"; c.strokeStyle = HUD.head; c.stroke();
+                    c.lineCap = "round"; c.strokeStyle = baseHpCol(frac); c.stroke();
                     c.lineCap = "butt";
                 }
             } else {
@@ -4192,7 +4199,7 @@ import * as tankRecords from './tankRecords.js';
             c.strokeStyle = teamCol;
             c.beginPath(); c.arc(0, 0, inRpx * 0.94, 0, Math.PI * 2); c.stroke();
             // integrity ring, same as the outpost's capture ring: dark track,
-            // white arc for remaining health
+            // health-coloured arc for remaining health
             if (alive && st.h !== undefined) {
                 const ringR = R * scale * 1.07;
                 c.globalAlpha = 0.22;
@@ -4200,8 +4207,8 @@ import * as tankRecords from './tankRecords.js';
                 c.lineWidth = Math.max(3, R * 0.05);
                 c.beginPath(); c.arc(0, 0, ringR, 0, Math.PI * 2); c.stroke();
                 if (st.h > 0.001) {
-                    c.globalAlpha = 0.85;
-                    c.strokeStyle = "#ffffff";
+                    c.globalAlpha = 0.9;
+                    c.strokeStyle = baseHpCol(st.h);
                     c.beginPath();
                     c.arc(0, 0, ringR, -Math.PI / 2, -Math.PI / 2 + st.h * Math.PI * 2);
                     c.stroke();
@@ -4219,8 +4226,9 @@ import * as tankRecords from './tankRecords.js';
             }
             c.restore();
 
-            // HP bar: below the boulder, filled with the owning team's color
-            // (hidden while the pocket is empty or the ring is still forming)
+            // HP bar: below the boulder, filled with the health colour so a
+            // neutral base is not a grey bar on the dark ground (hidden while
+            // the pocket is empty or the ring is still forming)
             if (alive && st.h !== undefined && st.h > 0.003) {
                 const barW = R * 1.05, barH = Math.max(5, R * 0.08);
                 const barY = R * scale + barH * 2.2;
@@ -4244,7 +4252,7 @@ import * as tankRecords from './tankRecords.js';
                     const iw = (barW - barH * 0.5) * st.h;
                     cap(sx - barW / 2 + barH * 0.25, sy + barY + barH * 0.25,
                         iw, barH * 0.5, barH * 0.25);
-                    c.fillStyle = teamCol;
+                    c.fillStyle = baseHpCol(st.h);
                     c.fill();
                 }
             }
@@ -4286,7 +4294,7 @@ import * as tankRecords from './tankRecords.js';
                 hudTitle("UNDER ATTACK", sx, by2 - 6 - as * 0.5, as, "#ff6b5e", "center", blink, c);
                 c.save();
                 c.globalAlpha = blink;
-                hudBar(c, sx - bw2 / 2, by2, bw2, bh2, st.h || 0, HUD.danger);
+                hudBar(c, sx - bw2 / 2, by2, bw2, bh2, st.h || 0, baseHpCol(st.h || 0));
                 c.restore();
             }
             if (royaleActive() && st.l > 0) {
@@ -6535,43 +6543,64 @@ import * as tankRecords from './tankRecords.js';
     window.dwDeathIntro = () => ({ k: deathIntroK(), at: global.royaleDiedAt || 0, beat: deathText.introBeat(deathCalm()), fade: deathText.INTRO.fade });
     const BANK_PILL = "#7fb1f2", BANK_PILL_TEXT = "#120e15";
     const LEVEL_BAR = "#5ce0d8", LEVEL_BAR_OLD = "#3aa39c", BANKED_PILL = "#d9a032";
+    // One bright amber row, dark text: the kill count should read at a glance
+    // instead of being another near-black HUD well.
+    function drawKillbar(x, y, w, h) {
+        const kills = gui.__s.getKills();
+        hudBar(ctx[2], x, y, w, h, Math.min(1, (kills[0] | 0)), "#ffe08a", "#c98a1c");
+        const txt = "KILLS  " + util.formatKills(...kills);
+        let ls = 11.5; while (ls > 9 && hudTextW(txt, ls) > w - 16) ls -= 0.5;
+        drawText(txt, x + w / 2 + 0.5, y + h / 2 + 4.5 - (11.5 - ls) * 0.35, ls, HUD.ink, "center");
+    }
     function drawSelfInfo(max) {
 
-        // Dig Wars bottom stack (bottom → top): team war bar, wallet row,
-        // player name. No level bar: everyone is level 45.
-        let width = 440,
-            scorewidth = 70,
-            scorelength = 0,
-            height = 17,
-            x = (global.screenWidth - width) / 2,
-            y = global.screenHeight - 44 - height;
-        const warLive = config.game.warBar && global.war &&
+        // Dig Wars bottom stack (bottom → top): team war bar, kill bar, wallet
+        // row, player name. The wallet row is two bars now, Points and Carried.
+        const width = 440, height = 17;
+        const raid = royaleActive();
+        // Keep the bottom centre rows out of the bottom-right minimap on a
+        // narrow screen; the fallback is the desktop minimap's usual left edge.
+        const mmLeft = (hudDrawn.minimap && hudDrawn.minimap.x) || (global.screenWidth - 225);
+        const hasMM = !!hudDrawn.minimap || raid;
+        const walletW = hasMM
+            ? Math.min(300, Math.max(220, 2 * (mmLeft - global.screenWidth / 2 - 14)))
+            : 300;
+        const x = (global.screenWidth - width) / 2;
+        const walletX = (global.screenWidth - walletW) / 2;
+        // The war bar only exists outside a raid; keeping the old global check
+        // moved the whole stack for stale war data.
+        const warLive = !raid && config.game.warBar && global.war &&
             performance.now() - global.war.at <= 6000;
+        let y = global.screenHeight - 44 - height;
         if (warLive) y -= 8;
-        ctx[2].lineWidth = 10;
-        if (global.GUIStatus.renderPlayerKillbar) {
-            scorelength = -112.2;
-            scorewidth = 160;
-            drawBar(x + scorewidth - scorelength, x + width - scorewidth - scorelength, y + height / 2, height - 3 + config.graphical.barChunk, color.black);
-            drawBar(x + scorewidth - scorelength, x + width - scorewidth - scorelength, y + height / 2, height - 3, color.grey);
-            drawBar(x + scorewidth - scorelength, x - scorelength + width * ((scorewidth / width) + ((width - scorewidth * 2) / width) * (1 ? Math.min(1, gui.__s.getKills()[0] / 1) : 1)), y + height / 2, height - 3.5, color.teal);
-            drawText("Kills: " + util.formatKills(...gui.__s.getKills()), x + width / 2 + 0.5 - scorelength, y + height / 2 + 6, 13, color.guiwhite, "center");
-            scorelength = 72.5;
-            scorewidth = 120;
+        const kbOn = !!global.GUIStatus.renderPlayerKillbar;
+        const kbH = 14, kbGap = 5;
+        // raid: the kill bar takes the free row under the wallet; elsewhere it
+        // keeps the old row and the score bar moves above it.
+        let walletY = y, killY = 0;
+        if (kbOn) {
+            if (raid) killY = walletY + height + kbGap;
+            else { walletY -= kbH + kbGap; killY = y; }
         }
+        ctx[2].lineWidth = 10;
+        // On a narrow screen a 440-wide row would run into the minimap (and
+        // the HP bars above it); stop it short of that corner.
+        const kbW = hasMM
+            ? Math.min(width, Math.max(0, 2 * (mmLeft - global.screenWidth / 2 - 12)))
+            : width;
+        if (kbOn && kbW >= 180) drawKillbar((global.screenWidth - kbW) / 2, killY, kbW, kbH);
+        const ry = walletY + height / 2, pillH = height + 1, pillTop = ry - pillH / 2;
         // ── Score / Total Points bar below player name ────────────
         if (!global.gems || !(global.gems.cap > 0)) {
-            drawBar(x + scorewidth - scorelength, x + width - scorewidth - scorelength, y + height / 2, height - 3 + config.graphical.barChunk, color.black);
-            drawBar(x + scorewidth - scorelength, x + width - scorewidth - scorelength, y + height / 2, height - 3, color.grey);
-            drawBar(x + scorewidth - scorelength, x - scorelength + width * ((scorewidth / width) + ((width - scorewidth * 2) / width) * (max ? Math.min(1, gui.__s.getScore() / max) : 1)), y + height / 2, height - 3.5, color.green);
-            drawText("Score: " + util.formatLargeNumber(Math.round(gui.__s.getScore())), x + width / 2 + 0.5 - scorelength, y + height / 2 + 6, 13, color.guiwhite, "center");
+            hudDrawn.wallet = { x: walletX, y: pillTop, w: walletW, h: pillH };
+            drawBar(walletX, walletX + walletW, ry, height - 3 + config.graphical.barChunk, color.black);
+            drawBar(walletX, walletX + walletW, ry, height - 3, color.grey);
+            drawBar(walletX, walletX + walletW * (max ? Math.min(1, gui.__s.getScore() / max) : 1), ry, height - 3.5, color.green);
+            drawText("Score: " + util.formatLargeNumber(Math.round(gui.__s.getScore())), walletX + walletW / 2 + 0.5, ry + 6, 13, color.guiwhite, "center");
         } else {
             const g = global.gems;
             const r = global.royale || {};
             const you = r.you || {};
-            const rx1 = x + scorewidth - scorelength, rx2 = x + width - scorewidth - scorelength;
-            const ry = y + height / 2, pillH = height + 1, capR = (height - 3) / 2;
-            const left = rx1 - capR, full = rx2 - rx1 + capR * 2;
             const banked = g.banked | 0;
             const carried = g.carried | 0;
             const myPlace = r.place | 0;
@@ -6589,34 +6618,36 @@ import * as tankRecords from './tankRecords.js';
                 : Math.max(0, banked - (g.kept | 0));
             const totalPts = Math.max(0, baseScore);
             const topBoardScore = r.board && r.board[0] ? (r.board[0].score | 0) : 0;
-            const refMax = Math.max(max || 0, topBoardScore, totalPts + carried, 1000);
-            const scoreFill = (totalPts + carried) > 0 ? Math.max(0.06, Math.min(1, (totalPts + carried) / refMax)) : 0;
-            const load = g.cap > 0 ? Math.min(1, carried / g.cap) : 0,
-                blink = load >= 1 && Math.floor(Date.now() / 160) % 2 === 0;
-            hudDrawn.wallet = { x: left, y: ry - pillH / 2, w: full, h: pillH };
+            const pointsFill = scoreText.pointsFrac(totalPts, topBoardScore || max || 0);
+            const carryFill = scoreText.carriedFrac(carried, g.cap);
+            const gap = 10, barW = (walletW - gap) / 2;
+            const blink = carryFill >= 1 && Math.floor(Date.now() / 160) % 2 === 0;
+            hudDrawn.wallet = { x: walletX, y: pillTop, w: walletW, h: pillH };
             const kPill = gatePills();
             ctx[2].save();
             ctx[2].globalAlpha *= kPill;
             ctx[2].translate(0, (1 - kPill) * 8);
-            hudBar(ctx[2], left, ry - pillH / 2, full, pillH, scoreFill, blink ? HUD.danger : LEVEL_BAR);
-            const scoreTxt = carried > 0
-                ? "Score: " + util.formatLargeNumber(totalPts) + " pts (+" + util.formatLargeNumber(carried) + " carried)"
-                : "Score: " + util.formatLargeNumber(totalPts) + " pts";
-            let ls = 13; while (ls > 9 && hudTextW(scoreTxt, ls) > full - 14) ls -= 0.5;
-            drawText(scoreTxt, left + full / 2 + 0.5, ry + 6 - (13 - ls) * 0.35, ls, color.guiwhite, "center");
+            hudBar(ctx[2], walletX, pillTop, barW, pillH, pointsFill, HUD.gold);
+            hudBar(ctx[2], walletX + barW + gap, pillTop, barW, pillH, carryFill, blink ? HUD.danger : BANK_PILL);
+            const pTxt = "Points " + util.formatLargeNumber(totalPts);
+            const cTxt = "Carried " + util.formatLargeNumber(carried) + " / " + util.formatLargeNumber(g.cap | 0);
+            let ps = 12; while (ps > 8.5 && hudTextW(pTxt, ps) > barW - 12) ps -= 0.5;
+            let cs = 12; while (cs > 8.5 && hudTextW(cTxt, cs) > barW - 12) cs -= 0.5;
+            hudTitle(pTxt, walletX + barW / 2 + 0.5, pillTop + pillH / 2 + 5 - (12 - ps) * 0.35, ps, color.guiwhite, "center", 1, ctx[2]);
+            hudTitle(cTxt, walletX + barW + gap + barW / 2 + 0.5, pillTop + pillH / 2 + 5 - (12 - cs) * 0.35, cs, color.guiwhite, "center", 1, ctx[2]);
             if (royaleActive() && !global.mobile && global.canvas && !global.died) {
                 const crb = global.canvas.height / global.screenHeight / global.ratio;
                 const mxb = global.mouse.x / (crb * global.ratio), myb = global.mouse.y / (crb * global.ratio);
-                if (mxb >= left && mxb <= left + full && myb >= ry - pillH / 2 && myb <= ry + pillH / 2) queueTip(scoreText.BANK_TIP, scoreText.bankTipBody(aoNow()), left + full / 2, ry - pillH / 2, true);
+                if (mxb >= walletX && mxb <= walletX + walletW && myb >= pillTop && myb <= pillTop + pillH) queueTip(scoreText.BANK_TIP, scoreText.bankTipBody(aoNow()), walletX + walletW / 2, pillTop, true);
             }
             ctx[2].restore();
-            drawBankPops(global.screenWidth / 2, Math.round(y - 10 - 4) - 1 - 30);
+            drawBankPops(global.screenWidth / 2, Math.round(walletY - 10 - 4) - 1 - 30);
         }
         ctx[2].lineWidth = 4;
         var name = global.player.name.substring(7, global.player.name.length + 1);
         // your rank badge (placement "?" included) and name, centred as one
         const myCode = name ? nameBadgeCode(myRankCode(), true) : 0;
-        const nameX = Math.round(x + width / 2 + nameBadgeRoom(myCode, 28) / 2) + 1.5, nameY = Math.round(y - 10 - 4) - 1;
+        const nameX = Math.round(x + width / 2 + nameBadgeRoom(myCode, 28) / 2) + 1.5, nameY = Math.round(walletY - 10 - 4) - 1;
         const mySn = styledName(name, global.myNameStyle, global.nameColor == "#ffffff" ? color.guiwhite : global.nameColor, nameX, 28, "center", ctx[2], nameY);
         drawText(mySn.text, nameX, nameY, 28, mySn.fill, "center");
         drawNameBadge(myCode, mySn.text, nameX, nameY, 28, "center", ctx[2]);
@@ -6994,8 +7025,8 @@ import * as tankRecords from './tankRecords.js';
         }
     }
 
-    // Mining combo meter: server-counted chain (2.5s window, up to +50%
-    // dust), drawn under the tank with a depleting fuse bar. Starts at ×2.
+    // Mining combo meter: server-counted chain of rocks destroyed (2.5s
+    // window, up to +25%), drawn under the tank with a depleting fuse bar.
     function drawMineCombo() {
         const g = global.gems;
         if (!g || !config.game.gemPopups) return;
@@ -7004,7 +7035,7 @@ import * as tankRecords from './tankRecords.js';
         const now = performance.now();
         const left = 1 - (now - (g.mcomboAt || 0)) / 2500;
         if (left <= 0) return;
-        const bonus = Math.min(50, 5 * (n - 1));
+        const bonus = Math.min(25, 10 * (n - 1));
         // under your hull and its health bar (a fixed +96 sat on the bar, and
         // inside a grown hull)
         let cy = global.screenHeight / 2 + 96;
@@ -12275,12 +12306,13 @@ import * as tankRecords from './tankRecords.js';
             c.fill();
             c.stroke();
             c.restore();
-            // structure HP bar, neutral outposts included
+            // structure HP bar, neutral outposts included (health colour, so
+            // a neutral base is not a grey bar on the black map)
             if (st.h > 0 && o.id !== hoverOutpostId) {
-                const bw = dotR * 5, bh = 2.5, bx = mx - bw / 2, by = my + s2 + 3;
+                const bw = dotR * 5, bh = 3, bx = mx - bw / 2, by = my + s2 + 3;
                 c.fillStyle = color.black;
                 c.fillRect(bx - 0.5, by - 0.5, bw + 1, bh + 1);
-                c.fillStyle = ownCol;
+                c.fillStyle = baseHpCol(st.h);
                 c.fillRect(bx, by, bw * st.h, bh);
             }
             // small white label on the big map (hover pass draws gold)
@@ -12318,10 +12350,10 @@ import * as tankRecords from './tankRecords.js';
             c.globalAlpha = 1;
 
             if (st.h > 0) {
-                const bw = dotR * 5, bh = 2.5, bx = mx - bw / 2, by = my + s2 + 3;
+                const bw = dotR * 5, bh = 3, bx = mx - bw / 2, by = my + s2 + 3;
                 c.fillStyle = color.black;
                 c.fillRect(bx - 0.5, by - 0.5, bw + 1, bh + 1);
-                c.fillStyle = cc;
+                c.fillStyle = baseHpCol(st.h);
                 c.fillRect(bx, by, bw * st.h, bh);
             }
             // small white label on the big map
@@ -13095,6 +13127,13 @@ import * as tankRecords from './tankRecords.js';
         // no FPS line between them (it's opt-in): the bars sit right over the map
         if (!global.mobile && !config.graphical.showFps) y0 += 12;
         if (global.mobile && global.screenHeight > global.screenWidth) y0 = Math.max(y0, (hudTopBottom | 0) + 8);
+        // total banked, directly over the HP / shield bars
+        const banked = global.gems ? Math.max(0, global.gems.banked | 0) : 0;
+        const bankTxt = "Banked " + fmtNum(banked), bankH = 14;
+        const bankY = y0 - bankH - 2;
+        let bs = 12;
+        while (bs > 8 && hudTitleW(bankTxt, bs) > w - 8) bs -= 0.5;
+        hudTitle(bankTxt, x + w / 2, bankY + bankH / 2, bs, HUD.gold, "center", 1, c);
         const hf = me.render && me.render.health ? me.render.health.get() : me.health;
         const sf = me.render && me.render.shield ? me.render.shield.get() : me.shield;
         let y = y0;
@@ -13105,7 +13144,7 @@ import * as tankRecords from './tankRecords.js';
         }
         hudBar(c, x, y, w, hH, hf, HP_COLS[Math.max(0, Math.min(20, Math.round((me.health || 0) * 20)))]);
         vitalLabel(c, V.hpTxt, x, y, w, hH);
-        vitalsRect = { x: x - 4, y: y0 - 4, w: w + 8, h: total + 8 };
+        vitalsRect = { x: x - 4, y: bankY - 4, w: w + 8, h: (y0 - bankY) + total + 8 };
     }
     function vitalLabel(c, text, x, y, w, h) {
         const boost = config.graphical.fontSizeBoost || 0;

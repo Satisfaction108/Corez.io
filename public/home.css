@@ -1336,7 +1336,7 @@ body.in-game #homeSettingsPanel .kb-row b.kb-editing {
     background: var(--surface);
     box-shadow: inset 0 -.25em 0 var(--face-dk), 0 0.15em 0.48em var(--cast);
     color: var(--text);
-    font-family: Rubik, Ubuntu, sans-serif;
+    font-family: Rubik, Ubuntu, 'Noto Color Emoji', sans-serif;
 }
 .dwt-card.enter { animation: dwtIn .38s cubic-bezier(.2, 1.5, .4, 1); }
 @keyframes dwtIn {
@@ -1533,7 +1533,7 @@ body.in-game #homeSettingsPanel .kb-row b.kb-editing {
     background: var(--surface);
     box-shadow: inset 0 -.3em 0 var(--face-dk), 0 0.20em 0.64em var(--cast);
     color: var(--text);
-    font-family: Rubik, Ubuntu, sans-serif;
+    font-family: Rubik, Ubuntu, 'Noto Color Emoji', sans-serif;
     text-align: center;
     transform: scale(.9);
     transition: transform .4s cubic-bezier(.2, 1.5, .4, 1);
@@ -2173,7 +2173,7 @@ input.dw-input.mono::placeholder { letter-spacing: .12em; }
 .dw-modal-p { margin-bottom: 16px; color: var(--text2); font: 500 13px/1.5 var(--ui); }
 .dw-modal-p b { color: var(--text); }
 .dw-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
-.as-kbd { color: var(--heading); font-family: 'Ubuntu Mono', monospace; letter-spacing: .08em; }
+.as-kbd { color: var(--heading); font-family: 'Ubuntu Mono', 'Noto Color Emoji', monospace; letter-spacing: .08em; }
 @keyframes dwFade { from { opacity: 0; } }
 @keyframes dwPop { from { opacity: 0; transform: translateY(10px) scale(.94); } 60% { opacity: 1; } }
 
@@ -4084,7 +4084,7 @@ body.mobile .home-left { position: static; width: 0; min-width: 100%; margin-top
     width: max-content; max-width: calc(100vw - 32px);
     transform: translateX(-50%);
     pointer-events: none;
-    font-family: Ubuntu, sans-serif;
+    font-family: Ubuntu, 'Noto Color Emoji', sans-serif;
 }
 body:not(.in-game) .gt-stack { display: none; }
 .gt-card {
@@ -5176,13 +5176,13 @@ html[data-theme="light"] {
 
 html[data-theme] :is(#startMenuWrapper, #dwHub, #dwWelcome, #dwModalRoot, .dw-layer, #menuNav, #accountChip, #inviteBtn, #homeSidebar, #homeSettingsPanel, #homeChangelogPanel, #contributorsPanel, #toastContainer, #homeLeft, #lobbySide, #themeToggleBtn),
 html[data-theme] :is(#startMenuWrapper, #dwHub, #dwWelcome, #dwModalRoot, .dw-layer, #menuNav, #accountChip, #inviteBtn, #homeSidebar, #homeSettingsPanel, #homeChangelogPanel, #contributorsPanel, #toastContainer, #homeLeft, #lobbySide, #themeToggleBtn) *:not(.wordmark):not(.wordmark *):not(.mono):not(.as-kbd):not(.lk-hex):not(kbd) {
-    font-family: 'Ubuntu', sans-serif !important;
+    font-family: 'Ubuntu', 'Noto Color Emoji', sans-serif !important;
     font-weight: 700 !important;
     font-style: normal;
     letter-spacing: 0 !important;
     text-transform: none !important;
 }
-html[data-theme] .wordmark { font-family: 'Lilita One', 'Rubik', sans-serif; font-weight: 400; }
+html[data-theme] .wordmark { font-family: 'Lilita One', 'Rubik', 'Noto Color Emoji', sans-serif; font-weight: 400; }
 
 html[data-theme] :is(.field-label, .hero-tag, .hub-title, .dw-modal-h, .as-uname, .as-h, .wl-h, .wl-who-txt b, .wl-sub, .shop-empty-h, .shop-h, .shop-name, .shop-price, .shop-gnone-h, .lk-empty-h, .lk-bar-name, .fr-empty-h, .pf-h, .pf-stat-v, .lb-title, .ev-title, .dy-title, .dyd-h, .dy-back-h, .dy-big-v, .q-title, .iv-count-n, .iv-dust, .sp-header > span, .cl-header > span, #contributorsPanel .credit-name, .sp-label, .kb-header > span, .kb-section, .ac-name, .lb-empty-h, .mode-name) {
     color: #fff;
@@ -5568,7 +5568,7 @@ html[data-theme] .fb-attach-box:checked {
 html[data-theme] .fb-attach-box:focus, html[data-theme] .fb-attach-box:focus-visible { border-color: #222; outline: 0; }
 html[data-theme] .fb-attach-box:focus-visible { box-shadow: 0 0 0 3px var(--io-blue); }
 
-html[data-theme] #dwJoin, html[data-theme] #dwJoin * { font-family: 'Ubuntu', sans-serif; font-weight: 700; letter-spacing: 0; -webkit-text-stroke: 0; }
+html[data-theme] #dwJoin, html[data-theme] #dwJoin * { font-family: 'Ubuntu', 'Noto Color Emoji', sans-serif; font-weight: 700; letter-spacing: 0; -webkit-text-stroke: 0; }
 html[data-theme] #dwJoin { --bad: var(--io-red, #e03e3e); --warn: var(--io-yellow-dk, #c2ad3e); --good: var(--io-green, #3cb84a); }
 html[data-theme] #dwJoin:not(.see) { background: var(--home-floor, var(--bg)); }
 html[data-theme] #dwJoin.see { background: rgba(0, 0, 0, .6); }

@@ -203,7 +203,7 @@
     .dwt-menu-card .dwt-menu { margin-top: .5em; padding: .4em 0 .45em; }
 }
 
-#dwTut, #dwTut *, #dwTutMenu, #dwTutMenu *, #dwTutEnd, #dwTutEnd * { font-family: Ubuntu, sans-serif; font-weight: 700; letter-spacing: 0; }
+#dwTut, #dwTut *, #dwTutMenu, #dwTutMenu *, #dwTutEnd, #dwTutEnd * { font-family: Ubuntu, 'Noto Color Emoji', sans-serif; font-weight: 700; letter-spacing: 0; }
 #dwTut .dwt-card {
     border: 0;
     border-radius: 5px;

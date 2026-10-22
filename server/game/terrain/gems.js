@@ -6,6 +6,12 @@ const DEPOSIT_VALUE = {
     [ORE.SHARD]:   150,  
     [ORE.EMERALD]: 500,  
 };
+// A single gem never carries more than twice its base value. Rich Veins,
+// biome toughness and the storm still pay the full total: the overflow is
+// dropped as extra gems around the same deposit instead of one runaway gem.
+const GEM_VALUE_CAP = Object.fromEntries(
+    Object.entries(DEPOSIT_VALUE).map(([ore, value]) => [ore, value * 2])
+);
 const SHARD_BIG = 150;  
 const ORE_CLASS = {
     [ORE.COPPER]:  'gemPickupCopper',
@@ -55,8 +61,10 @@ const PICKUP_SLOP  = 1.0;
 
 const GEM_MAX_SPEED = 6;
 
-// Round 9 mining feel
-const COMBO_STEP = 0.1, COMBO_CAP = 1;
+// Round 9 mining feel. The chain is earned by breaking rocks, not by
+// collecting loose gems, and it tops out at +25% (playtest 13: +100% was
+// turning a good rock into a pile of oversized numbers).
+const COMBO_STEP = 0.1, COMBO_CAP = 0.25;
 const PLAIN_ROCK_MULT = process.env.ROYALE_PLAIN_FAST === '0' ? 1 : 1.3;
 const CHIPS = process.env.ROYALE_MINE_CHIPS !== '0';
 const CHIP_SHARE = 0.35;
@@ -174,6 +182,14 @@ function pityBurst(rock, breaker) {
     return true;
 }
 
+function bumpMiningCombo(body, now = Date.now()) {
+    if (!body) return 0;
+    if (now < (body._comboUntil || 0)) body._comboN = (body._comboN || 0) + 1;
+    else body._comboN = 1;
+    body._comboUntil = now + 2500;
+    return Math.min(COMBO_CAP, COMBO_STEP * ((body._comboN || 1) - 1));
+}
+
 function spawnOreBurst(rock, breaker) {
     if (!rock.ore) return;
     // what per-hit chips already paid comes off the break (chipHit)
@@ -181,10 +197,14 @@ function spawnOreBurst(rock, breaker) {
     rock._chipPaid = 0; rock._chipAcc = 0;
     // no gems in the BR lobby
     if (breaker && breaker.royaleLobby) return;
+    // Only a destroyed rock extends the mining chain. Its bonus is paid on
+    // this rock's payout; ordinary gem pickups never add to it.
+    const comboBonus = bumpMiningCombo(breaker);
     const cls = ORE_CLASS[rock.ore];
     const deposits = depositsOf(rock);
     for (const d of deposits) {
         let value = depositValue(rock, d, breaker);
+        if (comboBonus > 0) value = Math.round(value * (1 + comboBonus));
         if (owed > 0) { const take = Math.min(owed, value); value -= take; owed -= take; }
         if (value <= 0) continue;
         const bigCls = rock.ore === ORE.EMERALD ? 'gemPickupEmeraldCore' : 'gemPickupShardCore';
@@ -193,12 +213,28 @@ function spawnOreBurst(rock, breaker) {
         const ang   = breaker && breaker.x !== undefined
             ? Math.atan2(breaker.y - d.wy, breaker.x - d.wx)
             : (Math.atan2(d.wy - rock.wy, d.wx - rock.wx) || Math.random() * Math.PI * 2);
-        const gem = spawnGem(d.wx, d.wy, value, d.big ? bigCls : cls, size,
-                             Math.cos(ang) * 1.5, Math.sin(ang) * 1.5, rock.ore);
-        if (gem && breaker && breaker.id !== undefined) {
-            gem.gemSourceId = breaker.id;
-            // round 9: it flies to the breaker's tank (tickGem)
-            if (PULL && breaker.socket) gem.gemPullUntil = Date.now() + PULL_MS;
+        // Split a stacked payout into base-sized gems. The rock's total is
+        // unchanged, but no single pickup shows 1,800 for a 500 base gem.
+        const cap = GEM_VALUE_CAP[rock.ore] || value;
+        let left = value;
+        for (let n = 0; left > 0; n++) {
+            const piece = Math.min(cap, left);
+            const first = n === 0;
+            const spread = first ? 0 : Math.max(16, size * 1.45) * Math.sqrt(n);
+            const scatter = ang + n * 2.399963229728653;
+            const gem = spawnGem(
+                d.wx + Math.cos(scatter) * spread,
+                d.wy + Math.sin(scatter) * spread,
+                piece, first && d.big ? bigCls : cls,
+                first ? size : Math.max(12, size * 0.78),
+                Math.cos(ang) * 1.5, Math.sin(ang) * 1.5, rock.ore
+            );
+            if (gem && breaker && breaker.id !== undefined) {
+                gem.gemSourceId = breaker.id;
+                // round 9: it flies to the breaker's tank (tickGem)
+                if (PULL && breaker.socket) gem.gemPullUntil = Date.now() + PULL_MS;
+            }
+            left -= piece;
         }
     }
 }
@@ -213,9 +249,12 @@ function talkGems(body, delta, lost = 0, combo = null) {
     if (body.socket) {
         let kept = 0;
         try { kept = bankMod().kept(body.socket); } catch { /* */ }
+        // an expired chain is not a chain: do not keep showing "Mining x5"
+        const n = combo != null ? combo
+            : (Date.now() < (body._comboUntil || 0) ? (body._comboN | 0) : 0);
         body.socket.talk('GEM', body.carriedGems | 0, body.gemCap | 0, delta | 0,
                          (body.socket.gemBanked || 0) | 0, lost | 0,
-                         (combo ?? body._comboN) | 0, kept | 0);
+                         n | 0, kept | 0);
     }
 }
 
@@ -462,6 +501,7 @@ function initSatchel(body) {
 function dropGemsOnDeath(body, killers = []) {
     const carried = body.carriedGems | 0;
     body._comboN = 0;
+    body._comboUntil = 0;
     // tier history (newest first) decides what the drop looks like
     const deathHist = ((body.gemTierHist || []).filter(t => t && t.o && t.v > 0) || []).slice(-48).reverse();
     body.gemTierHist = [];
@@ -684,13 +724,8 @@ function tickGem(gem, tg, players) {
     }
 
     if (toucher) {
-        // Mining combo: chain pickups inside 2.5s for up to +100% value
-        // Banking keeps it (fun), death resets it (dropGemsOnDeath).
-        const tnow = Date.now();
-        if (tnow < (toucher._comboUntil || 0)) toucher._comboN = (toucher._comboN || 0) + 1;
-        else toucher._comboN = 1;
-        toucher._comboUntil = tnow + 2500;
-        // tier history restarts with each fresh haul
+        // Mining chain is bumped when a rock is destroyed (spawnOreBurst), not
+        // here: collecting a loose gem must not extend or earn the bonus.
         if ((toucher.carriedGems | 0) <= 0) toucher.gemTierHist = [];
         if (gem.gemOre) {
             // record tier + base value for the 1:1 death drop (combo bonus excluded)
@@ -698,9 +733,8 @@ function tickGem(gem, tg, players) {
             hist.push({ o: gem.gemOre, v: gem.gemValue });
             if (hist.length > 48) hist.shift();
         }
-        // round 9: doubled, +10% a chained pickup up to +100%)
-        const bonus = Math.min(COMBO_CAP, COMBO_STEP * ((toucher._comboN || 1) - 1));
-        const v = gem.gemValue + Math.round(gem.gemValue * bonus);
+        // the break already paid the chain bonus into the gem values
+        const v = gem.gemValue;
         gem.gemValue = 0;
         toucher.carriedGems = (toucher.carriedGems | 0) + v;
         if (toucher.socket && global.royaleAch) global.royaleAch.onGem(toucher, gem.gemOre | 0);
@@ -797,4 +831,4 @@ function tickGem(gem, tg, players) {
     }
 }
 
-module.exports = { CARRY_KEEP, setCarryKeep, carryKeepFor, chipHit, payoutOf, depositValue, stageGemMult, PLAIN_ROCK_MULT, CHIP_SHARE, COMBO_STEP, COMBO_CAP, spawnOreBurst, pityBurst, spawnGem, initSatchel, updateSatchel, orientSatchel, dropGemsOnDeath, tickGem, talkGems, setBanked, splitValue, SATCHEL_CAP, MAGNET_REACH };
+module.exports = { CARRY_KEEP, setCarryKeep, carryKeepFor, chipHit, payoutOf, depositValue, stageGemMult, PLAIN_ROCK_MULT, CHIP_SHARE, COMBO_STEP, COMBO_CAP, GEM_VALUE_CAP, spawnOreBurst, pityBurst, spawnGem, initSatchel, updateSatchel, orientSatchel, dropGemsOnDeath, tickGem, talkGems, setBanked, splitValue, SATCHEL_CAP, MAGNET_REACH };

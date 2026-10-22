@@ -188,7 +188,11 @@ test('labels: unique, short, no placeholder or blank tanks', () => {
 
 test('balance: today\'s tanks untouched, new tanks balanced against their parents', () => {
     const bad = [], steps = D.tolerance.steps, [tlo, thi] = D.tolerance.tough;
+    // Citron is hand-tuned after the budget pass (tanksExpansion.js TUNE): the
+    // owner wanted its spawner buffed past what the budget gave it.
+    const handTuned = new Set(['Citron']);
     for (const [k, t] of Object.entries(ON.tanks)) {
+        if (handTuned.has(t.label)) continue;
         if (!k.startsWith('xp_')) {
             if (k in D.balance) bad.push(k + ' (old) has a balance entry');
             const o = OFF.tanks[k];

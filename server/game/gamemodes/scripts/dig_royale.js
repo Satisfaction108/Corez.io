@@ -46,7 +46,7 @@ const tier5 = require('../../terrain/tier5.js');              // Tier 5 opens at
 const botTanks = require('../../../miscFiles/botTanks.js');
 const respawnBuild = require('../../terrain/respawnBuild.js');   // Respawn as / Last tank / Same stats buttons
 const autoStats = require('../../terrain/autoStats.js');   // unspent stat points placed after 20 s
-const raidPerks = require('../../terrain/raidPerks.js');   // perk picks from points (at most 15), a death takes two
+const raidPerks = require('../../terrain/raidPerks.js');   // perk picks from points (no overall cap), a death takes two
 const crowns = require('../../terrain/crowns.js');         // crowns: the last storm's top 3 wear points-earning, stealable crowns
 const soloColor = require('../../terrain/soloColor.js');
 const alwaysOn = require('../../terrain/alwaysOn.js');
@@ -1900,9 +1900,10 @@ function respecForNewRaid(body) {
     } catch { /* */ }
 }
 
-// Every raid tank (players and bots) gets each stat cap this much lower than
-// its tank's own (9 -> 7, a smasher's 12 -> 10)
-const STAT_CAP_CUT = 2;
+// Raid tanks keep the full stat caps their tank defines (9 for a normal
+// tank, 12 for a smasher). The cut was 2 for a while (9 -> 7); at 0 the
+// helper stays because setCapCut is also how a respawn resets the cut.
+const STAT_CAP_CUT = 0;
 function cutStatCaps(body) {
     if (body && body.skill && body.skill.setCapCut) body.skill.setCapCut(STAT_CAP_CUT);
 }
@@ -2910,13 +2911,13 @@ function onEvent(ev) {
 
 // ── raid perks (terrain/raidPerks.js) ─────────────────────────────────────
 // Points on the board earn picks of three perks (raidPerks.pickAt: 5,000,
-// then each one 5,000 further off than the last, 15 at most). The build sits on
-// the board row (raidStats), follows a reconnect (claimResume re-keys the row)
-// and is gone when the rows are: a new raid, or the /raidreset staging wipe.
-// A death halves the board score (deathCut), takes two random perks and any
-// open offer, and the milestones count again from the halved score.
-// Milestones reached together queue up behind the open offer. Bots take a
-// random pick a few seconds later.
+// 20,000, 45,000, 80,000...). There is no cap on picks, but every perk stops
+// at tier IV. The build sits on the board row (raidStats), follows a reconnect
+// (claimResume re-keys the row) and is gone when the rows are: a new raid, or
+// the /raidreset staging wipe. A death halves the board score (deathCut), takes
+// two random perks and any open offer, and the milestones count again from the
+// halved score. Milestones reached together queue up behind the open offer.
+// Bots take a random pick a few seconds later.
 // ROYALE_PERKS=0 switches the whole thing off.
 const PERKS_ON = process.env.ROYALE_PERKS !== '0';
 const PERK_TICK_MS = 250;

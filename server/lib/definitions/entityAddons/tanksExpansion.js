@@ -55,6 +55,36 @@ for (const key in snap) {
     if (hp !== 1) b.HEALTH = (b.HEALTH ?? 1) * hp;
     def.BODY = b;
 }
+// 2b. hand tuning for generated tanks whose budget number played wrong.
+// Applied after the balance pass, so these are the final numbers.
+// Citron: one spawner with four minions had twice the Auto-Spawner's reload,
+// slower minions and thin health, so it could not keep up.
+const TUNE = {
+    Citron: { reload: 72, health: 2.4, damage: 2.6, speed: 3.8, maxSpeed: 1.4, minionDamage: 1.7, recallRange: 900 },
+};
+for (const key in Class) {
+    const def = Class[key];
+    const tune = def && TUNE[def.LABEL];
+    if (!tune) continue;
+    for (const g of arr(def.GUNS)) {
+        const pr = g && g.PROPERTIES;
+        if (!pr || !pr.SHOOT_SETTINGS || !(pr.SHOOT_SETTINGS.reload > 0)) continue;
+        for (const k of ['reload', 'health', 'damage', 'speed', 'maxSpeed']) {
+            if (tune[k] != null) pr.SHOOT_SETTINGS[k] = tune[k];
+        }
+        if (tune.recallRange != null) pr.RECALL_RANGE = tune.recallRange;
+        // the spawned minions' own bullets hit harder too (their class is a
+        // scaled copy made just for this tank, so nobody else changes)
+        const minion = Array.isArray(pr.TYPE) ? Class[pr.TYPE[0]] : Class[pr.TYPE];
+        if (tune.minionDamage && minion && minion.GUNS) {
+            for (const mg of minion.GUNS) {
+                const ms = mg && mg.PROPERTIES && mg.PROPERTIES.SHOOT_SETTINGS;
+                if (ms) ms.damage *= tune.minionDamage;
+            }
+        }
+    }
+}
+
 // 3. the tree: Splitter in Desmos's slot, every new tank under each parent
 Class.basic.UPGRADES_TIER_1 = Class.basic.UPGRADES_TIER_1.map(k => D.removed.includes(k) ? D.root : k).filter((k, i, a) => a.indexOf(k) === i);
 const t5free = process.env.ROYALE_TANKS_T5_FREE === '1';

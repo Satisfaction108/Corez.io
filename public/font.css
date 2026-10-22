@@ -1,4 +1,5 @@
-/* License is at fonts/UFL.txt (Ubuntu) and fonts/OFL-Rubik.txt (Rubik) */
+/* License is at fonts/UFL.txt (Ubuntu), fonts/OFL-Rubik.txt (Rubik) and
+   fonts/OFL-NotoEmoji.txt (Noto Color Emoji) */
 
 /* The game font: Rubik (variable weight), used by all canvas HUD text
    and the settings panel. */
@@ -7,6 +8,40 @@
     src: url('./fonts/Rubik.ttf') format('truetype');
     font-style: normal;
     font-weight: 300 900;
+}
+
+/* Emoji: Noto Color Emoji (googlefonts/noto-emoji), the flat set Discord
+   shows. It only carries the emoji the app ships, so letters and numbers
+   keep the Rubik/Ubuntu look. unicode-range keeps the small file from
+   downloading on pages that never show an emoji. */
+@font-face {
+    font-family: "Noto Color Emoji";
+    src: url('./fonts/NotoColorEmoji.woff2') format('woff2');
+    font-style: normal;
+    font-weight: normal;
+    font-display: swap;
+    unicode-range: U+200D, U+203C, U+2049, U+20E3, U+231B, U+23F0-23F1, U+2600, U+2615,
+        U+261D, U+2620, U+2642, U+267B, U+267E, U+2693-2694, U+2699, U+26A0-26A1, U+26C8,
+        U+26CF, U+26D3-26D4, U+26F0, U+2705, U+2708, U+270A-270D, U+2714, U+2728, U+2744,
+        U+274C, U+2753, U+2757, U+2764, U+27A1, U+2B05-2B07, U+2B50, U+2B55, U+1F192-1F193,
+        U+1F195, U+1F197-1F199, U+1F1F1, U+1F1FC, U+1F300, U+1F308, U+1F30A-1F30B, U+1F30E,
+        U+1F319, U+1F31F, U+1F327, U+1F32A, U+1F32D-1F32E, U+1F331-1F332, U+1F335, U+1F339,
+        U+1F33B, U+1F33D, U+1F340, U+1F344, U+1F346-1F347, U+1F349, U+1F34C, U+1F34E,
+        U+1F351-1F352, U+1F354-1F355, U+1F35E-1F35F, U+1F368-1F36A, U+1F36C, U+1F370,
+        U+1F375, U+1F37A, U+1F37F, U+1F381-1F382, U+1F388-1F38A, U+1F3AE-1F3AF, U+1F3B2,
+        U+1F3C1, U+1F3C5-1F3C6, U+1F3F3-1F3F4, U+1F3F9, U+1F409, U+1F40C-1F40D,
+        U+1F410-1F412, U+1F414, U+1F419, U+1F41B, U+1F41D, U+1F41F, U+1F422, U+1F426-1F427,
+        U+1F42D-1F42E, U+1F430-1F431, U+1F434, U+1F436-1F438, U+1F43A-1F43C, U+1F440-1F441,
+        U+1F444-1F445, U+1F447-1F451, U+1F476, U+1F479, U+1F47B, U+1F47D-1F480, U+1F485,
+        U+1F48E, U+1F494-1F496, U+1F499-1F49C, U+1F4A2-1F4AD, U+1F4AF-1F4B0, U+1F4B8,
+        U+1F4E2-1F4E3, U+1F511-1F514, U+1F525, U+1F527-1F528, U+1F52B, U+1F52E, U+1F577,
+        U+1F579, U+1F595, U+1F5A4, U+1F5E1, U+1F5FF-1F616, U+1F618, U+1F61B, U+1F61E-1F624,
+        U+1F628-1F637, U+1F63A, U+1F641-1F644, U+1F648, U+1F64C, U+1F64F, U+1F680, U+1F697,
+        U+1F6A9, U+1F6E0-1F6E1, U+1F6F0, U+1F6F8, U+1F90C-1F90D, U+1F910-1F911,
+        U+1F913-1F914, U+1F916-1F919, U+1F91D-1F923, U+1F926, U+1F928-1F92C, U+1F92E-1F92F,
+        U+1F937, U+1F947-1F949, U+1F95A-1F95B, U+1F971, U+1F973-1F977, U+1F979-1F97A,
+        U+1F980, U+1F984-1F985, U+1F988-1F98A, U+1F990, U+1F996, U+1F9C0, U+1F9C2, U+1F9D0,
+        U+1F9E0-1F9E2, U+1F9F2, U+1FA99, U+1FAA8, U+1FAE0-1FAE1, U+1FAE5;
 }
 
 @font-face {

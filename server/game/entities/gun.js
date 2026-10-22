@@ -53,6 +53,9 @@ class Gun extends EventEmitter {
             this.bulletStats = (info.PROPERTIES.BULLET_STATS == null || info.PROPERTIES.BULLET_STATS == "master") ? "master" : new Skill(info.PROPERTIES.BULLET_STATS);
             this.settings = info.PROPERTIES.SHOOT_SETTINGS == null ? [] : JSON.parse(JSON.stringify(info.PROPERTIES.SHOOT_SETTINGS));
             this.countsOwnKids = info.PROPERTIES.MAX_CHILDREN == null ? false : info.PROPERTIES.MAX_CHILDREN;
+            // minions/drones this far from the hull are recalled so a spawner
+            // cannot end up with its slots filled by children left in the wall
+            this.recallRange = (info.PROPERTIES.RECALL_RANGE == null) ? 0 : Math.max(0, +info.PROPERTIES.RECALL_RANGE || 0);
             this.maxBullets = (info.PROPERTIES.MAX_BULLETS == null) ? false : info.PROPERTIES.MAX_BULLETS;
             this.syncsSkills = info.PROPERTIES.SYNCS_SKILLS == null ? false : info.PROPERTIES.SYNCS_SKILLS;
             this.negRecoil = info.PROPERTIES.NEGATIVE_RECOIL == null ? false : info.PROPERTIES.NEGATIVE_RECOIL;
@@ -229,6 +232,10 @@ class Gun extends EventEmitter {
         // Find the proper skillset for shooting
         let sk = this.bulletStats === "master" ? this.body.skill : this.bulletStats;
 
+        // A spawner counts its own children: forget dead ones and recall any
+        // that have been left far behind, otherwise a lost child keeps a slot
+        // occupied forever and the tank never fills back up.
+        if (this.countsOwnKids) this.pruneChildren();
         // Decides what to do based on child-counting settings
         let shootPermission = this.checkShootPermission();
 
@@ -276,6 +283,28 @@ class Gun extends EventEmitter {
         } else if (this.cycleTimer > this.maxCycleTimer) {
             this.cycleTimer = this.maxCycleTimer;
         }
+    }
+    pruneChildren() {
+        let w = 0;
+        for (let i = 0; i < this.children.length; i++) {
+            const child = this.children[i];
+            if (!child || child.isGhost) continue;
+            // already dead: drop the slot now instead of waiting for destroy()
+            if (typeof child.isDead === 'function' && child.isDead()) {
+                child.parent = null;
+                continue;
+            }
+            if (child.parent !== this) continue;
+            if (this.recallRange > 0 && child.source === this.body &&
+                Math.hypot(child.x - this.body.x, child.y - this.body.y) > this.recallRange) {
+                // kill it, but splice it out now so this reload can replace it
+                child.parent = null;
+                try { child.kill(); } catch (e) { /* */ }
+                continue;
+            }
+            this.children[w++] = child;
+        }
+        this.children.length = w;
     }
     checkShootPermission() {
         let sk = this.bulletStats === "master" ? this.body.skill : this.bulletStats;

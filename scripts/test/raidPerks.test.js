@@ -1,10 +1,10 @@
 // Raid perks: node scripts/test/raidPerks.test.js
 //
-//   milestones   a pick of three at 5,000, 15,000, 30,000... board points
-//                (each 5,000 further off than the last), 15 at most;
+//   milestones   a pick of three at 5,000, 20,000, 45,000... board points
+//                (each one costs much more than the last), no overall cap;
 //                points lost later never take one back
-//   sanitize     an old or restored build loses removed perks and is cut
-//                down to the cap
+//   sanitize     an old or restored build loses removed perks; stacks stop
+//                at tier IV
 //   offers       three different perks with room left, mining and utility
 //                offered more than damage; a pick must be on the offer;
 //                holding a perk that can still level up puts at least one
@@ -138,51 +138,57 @@ const setScore = (b, n) => royale.debugSetScore(b, n);
 const perkGuns = (b) => [...b.guns.values()].filter(g => g.isRaidPerk);
 
 // ── the pure rules ──────────────────────────────────────────────────────
-test('milestones: each pick 5,000 further off than the last, 15 at most, never taken back', () => {
+test('milestones: 5,000 then each pick costs much more, no overall cap', () => {
     assert.equal(perks.STEP, 5000);
-    assert.equal(perks.MAX_PICKS, 15);
+    assert.equal(perks.MAX_TIER, 4);
+    assert.equal(perks.pickAt(1), 5000);
+    assert.equal(perks.pickAt(2), 20000);
+    assert.equal(perks.pickAt(3), 45000);
+    assert.equal(perks.pickAt(4), 80000);
     assert.equal(perks.earnedAt(4999), 0);
     assert.equal(perks.earnedAt(5000), 1);
-    assert.equal(perks.earnedAt(14999), 1);
-    assert.equal(perks.earnedAt(15000), 2);
-    assert.equal(perks.earnedAt(30000), 3);
+    assert.equal(perks.earnedAt(19999), 1);
+    assert.equal(perks.earnedAt(20000), 2);
+    assert.equal(perks.earnedAt(45000), 3);
     assert.equal(perks.earnedAt(-200), 0);
-    assert.equal(perks.earnedAt(6e6), 15, 'six million points is still 15');
+    assert.equal(perks.earnedAt(6e6), 34, 'six million points is 34 picks');
     assert.equal(perks.nextAt(0), 5000);
-    assert.equal(perks.nextAt(2), 30000);
-    assert.equal(perks.nextAt(15), 0, 'none left');
+    assert.equal(perks.nextAt(2), 45000);
+    assert.equal(perks.nextAt(34), 6125000, 'there is always a next one');
     const b = perks.newBuild(), r = rng(1);
     assert.equal(perks.syncScore(b, 4999, r), 0);
     assert.equal(b.offer, null);
     assert.equal(perks.syncScore(b, 5000, r), 1);
     assert.equal(b.offer.length, 3);
-    assert.equal(perks.syncScore(b, 14999, r), 0, 'nothing new below 15,000');
+    assert.equal(perks.syncScore(b, 19999, r), 0, 'nothing new below 20,000');
     perks.pick(b, b.offer[0], r);
     assert.equal(perks.syncScore(b, 2000, r), 0, 'a score that fell (a death with gems) takes nothing back');
     assert.equal(perks.totalPicks(b), 1);
-    assert.equal(perks.syncScore(b, 15000, r), 1, 'the next one is still at 15,000');
+    assert.equal(perks.syncScore(b, 20000, r), 1, 'the next one is still at 20,000');
     const big = perks.newBuild();
     perks.syncScore(big, 6e6, r);
     while (big.offer) perks.pick(big, big.offer[0], r);
-    assert.equal(perks.totalPicks(big), 15);
-    assert.equal(perks.syncScore(big, 9e6, r), 0);
-    assert.equal(perks.snapshot(big).next, 0);
+    assert.equal(perks.totalPicks(big), 34, 'no cap on picks');
+    assert.equal(perks.snapshot(big).next, 6125000, 'the next one is still shown');
+    assert.equal(perks.snapshot(big).step, 345000, 'and it is far off');
 });
 
-test('sanitize: removed perks go, an old build is cut to the cap, a clean one is left alone', () => {
+test('sanitize: removed perks go, stacks stop at tier IV, no total cap', () => {
     const r = rng(4);
     const old = perks.newBuild();
     delete old.rules;
     for (const p of perks.CATALOG) old.perks[p.id] = p.max;
+    old.perks.drill = 9;
     old.perks.vamp = 4; old.perks.plating = 5;
     old.granted = 1200; old.pending = 40; old.offer = ['vamp', 'drill', 'hide'];
     perks.sanitize(old);
     assert.ok(!('vamp' in old.perks) && !('plating' in old.perks), 'Gem Leech and Ore Plating are gone');
-    assert.equal(perks.totalPicks(old), 15);
-    assert.equal(old.granted, 15);
-    assert.equal(old.offer, null);
-    assert.equal(old.pending, 0);
-    assert.equal(perks.syncScore(old, 6e6, r), 0, 'and no more come');
+    assert.equal(old.perks.drill, perks.MAX_TIER, 'a stack above tier IV is cut');
+    assert.equal(perks.totalPicks(old), perks.CATALOG.reduce((n, p) => n + p.max, 0), 'every valid stack stays');
+    assert.equal(old.granted, 1200, 'progression is not clamped any more');
+    assert.deepEqual(old.offer, ['drill', 'hide']);
+    assert.equal(old.pending, 40);
+    assert.equal(perks.syncScore(old, 6e6, r), 0, 'a high-water mark never takes one back');
     assert.equal(perks.computeFx(old.perks).vamp, undefined);
     const clean = perks.newBuild();
     perks.syncScore(clean, 5000, r);
@@ -271,13 +277,13 @@ test('offers: a perk you hold below its max comes up as an upgrade on every offe
 
 test('queue: milestones reached together wait behind the open offer', () => {
     const b = perks.newBuild(), r = rng(3);
-    assert.equal(perks.syncScore(b, 31000, r), 3);
+    assert.equal(perks.syncScore(b, 50000, r), 3);
     assert.equal(b.offer.length, 3);
     assert.equal(b.pending, 2);
     const snap = perks.snapshot(b);
     assert.equal(snap.q, 2);
-    assert.equal(snap.next, 50000);
-    assert.equal(snap.step, 20000);
+    assert.equal(snap.next, 80000);
+    assert.equal(snap.step, 35000);
     perks.pick(b, b.offer[0], r);
     assert.ok(b.offer && b.offer.length === 3, 'the next one rolls at once');
     assert.equal(b.pending, 1);
@@ -319,13 +325,22 @@ test('balance: damage perks stay small, every max is sane', () => {
     assert.ok(/instance\.rockOnly && other\.type !== "wall"/.test(idx), 'collide lets rock-only shots pass entities');
     for (const d of defs) assert.ok(!d.PROPERTIES.AUTOFIRE, 'perk barrels fire with you, never on their own');
     assert.ok(perks.PIERCE_TANK_DAMAGE < 1, 'a shot through rock hits a tank softer');
-    for (const p of perks.CATALOG) assert.ok(p.max >= 3 && p.max <= 5, p.id);
+    for (const p of perks.CATALOG) assert.ok(p.max >= 3 && p.max <= perks.MAX_TIER, p.id);
+    assert.equal(perks.BY_ID.get('twin').max, 3, 'the extra barrels stop at three');
+    assert.equal(perks.BY_ID.get('drones').max, 3, 'the swarm stops at six');
+    assert.equal(perks.BY_ID.get('drill').max, perks.MAX_TIER);
     assert.equal(perks.computeFx({ satchel: 1 }).satchel, 1);
     assert.equal(perks.computeFx({ satchel: 3 }).satchel, 3);
     assert.equal(perks.CATALOG.length, 24);
 });
 
 // ── in a raid ───────────────────────────────────────────────────────────
+test('raid: stat caps stay at the tank\'s full 9 (no raid-wide cut)', () => {
+    const s = mkSocket();
+    const p = body(s);
+    assert.deepEqual(p.skill.caps, Array(11).fill(9), 'caps ' + p.skill.caps.join(','));
+});
+
 test('raid: the offer reaches the client, bogus picks are refused, a pick lands on the body', () => {
     const s = mkSocket();
     const p = body(s);
@@ -333,7 +348,7 @@ test('raid: the offer reaches the client, bogus picks are refused, a pick lands 
     perkTick();
     const pk = lastPK(s);
     assert.ok(pk && pk.o.length === 3, 'offer sent: ' + JSON.stringify(pk));
-    assert.equal(pk.next, 15000);
+    assert.equal(pk.next, 20000);
     const n0 = s.packets.length;
     assert.equal(royale.pickPerk(s, 'notaperk'), false);
     assert.ok(s.packets.length > n0 && lastPK(s).o.length === 3, 'refused, and the real offer is sent again');
@@ -365,22 +380,22 @@ test('raid: a death halves the board score, takes two random perks and any offer
     b.offer = ['hide', 'rich', 'drill'];
     assert.equal(royale.pickPerk(s, 'hide'), true);
     assert.equal(b.offer, null);
-    setScore(p, 75000); perkTick();
+    setScore(p, 80000); perkTick();
     assert.ok(b.offer, 'an offer open at death');
     p.kill(); royale.onCombatantDead(p); loop(2);
     s.lastRaidDeathAt = Date.now();
-    assert.equal(royale.boardSnapshot().find(r => r.name === p.name).score, 37500, 'half the board score');
+    assert.equal(royale.boardSnapshot().find(r => r.name === p.name).score, 40000, 'half the board score');
     assert.equal(Object.keys(b.perks).length, 1, 'two of the three perks are gone: ' + JSON.stringify(b.perks));
     assert.equal(b.offer, null, 'the open offer went too');
     assert.equal(b.granted, 0);
     const q = body(s, 500, 0);
     perkTick();
-    assert.equal(lastPK(s).next, 42500, 'the next pick is 5,000 past the new score');
-    setScore(q, 42499); perkTick();
+    assert.equal(lastPK(s).next, 45000, 'the next pick is 5,000 past the new score');
+    setScore(q, 44999); perkTick();
     assert.equal(b.offer, null);
-    setScore(q, 42500); perkTick();
-    assert.ok(b.offer && b.offer.length === 3, 'offered at 42,500');
-    assert.equal(lastPK(s).next, 52500, 'then 10,000 more');
+    setScore(q, 45000); perkTick();
+    assert.ok(b.offer && b.offer.length === 3, 'offered at 45,000');
+    assert.equal(lastPK(s).next, 60000, 'then 20,000 more');
 });
 
 test('death: perks pure rules', () => {
@@ -398,9 +413,9 @@ test('death: perks pure rules', () => {
     assert.equal(b.base, 12000);
     assert.equal(perks.syncScore(b, 16999, rng(3)), 0);
     assert.equal(perks.syncScore(b, 17000, rng(3)), 1);
-    assert.equal(perks.snapshot(b).next, 27000);
+    assert.equal(perks.snapshot(b).next, 32000);
     const one = perks.newBuild();
-    one.perks = { drill: 5 };
+    one.perks = { drill: perks.MAX_TIER };
     assert.deepEqual(perks.onDeath(one, 0), ['drill'], 'a single perk goes, whatever its level');
     assert.deepEqual(one.perks, {});
     assert.deepEqual(perks.onDeath(perks.newBuild(), 0), []);
@@ -409,7 +424,7 @@ test('death: perks pure rules', () => {
 test('raid: the build survives evolution and the barrel looks right', () => {
     const s = mkSocket();
     const p = body(s);
-    setScore(p, 15000);
+    setScore(p, 20000);
     perkTick();
     const b = royale._perkBuild(p);
     b.offer = ['twin', 'speed', 'hide'];
@@ -626,10 +641,10 @@ test('client: cards sit low in the middle, clear of the tank, stat bars and mini
     const parsed = L.parseState(JSON.stringify(perks.snapshot((() => { const b = perks.newBuild(); b.perks.drill = 2; b.granted = 2; return b; })())));
     assert.equal(parsed.offer, null);
     assert.deepEqual(parsed.build.map(p => [p.id, p.n]), [['drill', 2]]);
-    assert.equal(parsed.next, 30000);
-    assert.equal(parsed.step, 15000);
-    assert.equal(L.badgeTip(parsed, 20000), 'Each perk takes more points than the last, up to 15. Next one at 30,000, you have 20,000.');
-    assert.equal(L.badgeTip({ next: 0, max: 15 }, 9e6), 'You have all 15 perks.');
+    assert.equal(parsed.next, 45000);
+    assert.equal(parsed.step, 25000);
+    assert.equal(L.badgeTip(parsed, 20000), 'Each new perk costs more than the last. Next one at 45,000, you have 20,000.');
+    assert.equal(L.badgeTip({ next: 0 }, 9e6), 'You have every perk the raid offers.');
     assert.equal(L.deathLine(parsed.build), 'Dying took two random perks and half your points.');
     assert.equal(L.deathLine([]), '');
 });

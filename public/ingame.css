@@ -38,7 +38,7 @@
 #chatInput {
     color: #fff;
     caret-color: #fff;
-    font-family: Ubuntu, sans-serif;
+    font-family: Ubuntu, 'Noto Color Emoji', sans-serif;
     font-weight: 700;
 }
 #chatInput::placeholder { color: rgba(255, 255, 255, 0.55); }
@@ -70,7 +70,7 @@ body #dwCoach {
     box-shadow: none;
 }
 .gt-tag { border: 0; border-radius: 3px; letter-spacing: 0; }
-.gt-title { font-family: 'Lilita One', Ubuntu, sans-serif; font-weight: 400; letter-spacing: .01em; -webkit-text-stroke: 3px #333; paint-order: stroke fill; color: #fff; }
+.gt-title { font-family: 'Lilita One', Ubuntu, 'Noto Color Emoji', sans-serif; font-weight: 400; letter-spacing: .01em; -webkit-text-stroke: 3px #333; paint-order: stroke fill; color: #fff; }
 .gt-btn { border: 2px solid #3a3a3a; border-radius: 4px; background: #5a5a5a; box-shadow: none; letter-spacing: 0; }
 .gt-btn.primary { border-color: #2c8f37; background: #4fcf5c; box-shadow: none; background-image: none; }
 
@@ -88,10 +88,10 @@ body.in-game .igc-title { font: 400 20px 'Lilita One', Ubuntu, sans-serif; lette
     background: rgba(0, 0, 0, .5);
     box-shadow: none;
     color: #fff;
-    font-family: Ubuntu, sans-serif;
+    font-family: Ubuntu, 'Noto Color Emoji', sans-serif;
 }
-#dwFinaleDiscord small, #dwKeepNudge .kn-p { color: #cfcfcf; font-family: Ubuntu, sans-serif; }
-#dwKeepNudge .kn-h { font-family: 'Lilita One', Ubuntu, sans-serif; font-weight: 400; letter-spacing: .01em; color: #fff; -webkit-text-stroke: 3px #333; paint-order: stroke fill; }
+#dwFinaleDiscord small, #dwKeepNudge .kn-p { color: #cfcfcf; font-family: Ubuntu, 'Noto Color Emoji', sans-serif; }
+#dwKeepNudge .kn-h { font-family: 'Lilita One', Ubuntu, 'Noto Color Emoji', sans-serif; font-weight: 400; letter-spacing: .01em; color: #fff; -webkit-text-stroke: 3px #333; paint-order: stroke fill; }
 #dwShareBtn, #dwKeepNudge .kn-go, #dwShareNote .dw-btn {
     border: 3px solid #2c8f37 !important;
     border-radius: 5px !important;
@@ -99,14 +99,14 @@ body.in-game .igc-title { font: 400 20px 'Lilita One', Ubuntu, sans-serif; lette
     background-image: none !important;
     box-shadow: none !important;
     color: #fff !important;
-    font-family: Ubuntu, sans-serif !important;
+    font-family: Ubuntu, 'Noto Color Emoji', sans-serif !important;
     font-weight: 700 !important;
     letter-spacing: 0 !important;
     -webkit-text-stroke: 3px #333;
     paint-order: stroke fill;
 }
 #dwShareNote .dw-btn { border-color: #3a3a3a !important; background: #5a5a5a !important; }
-#dwKeepNudge .kn-no { font-family: Ubuntu, sans-serif; font-weight: 700; color: #cfcfcf; }
+#dwKeepNudge .kn-no { font-family: Ubuntu, 'Noto Color Emoji', sans-serif; font-weight: 700; color: #cfcfcf; }
 
 #touchChatBtn, #touchRecBtn, #touchAutoBtn, #touchPingBtn {
     border: 3px solid #3a3a3a;
@@ -114,13 +114,13 @@ body.in-game .igc-title { font: 400 20px 'Lilita One', Ubuntu, sans-serif; lette
     background: #5a5a5a;
     box-shadow: none;
     color: #fff;
-    font-family: Ubuntu, sans-serif;
+    font-family: Ubuntu, 'Noto Color Emoji', sans-serif;
     font-weight: 700;
     letter-spacing: 0;
 }
 #touchAutoBtn.on { background: #e07b2e; border-color: #9e4a14; box-shadow: none; text-shadow: none; }
 #touchChatBtn:active, #touchRecBtn:active, #touchAutoBtn:active, #touchPingBtn:active { transform: translateY(1px); box-shadow: none; background: #4e4e4e; }
-#touchClip .clip-txt b, #touchRotate h2 { font-family: Ubuntu, sans-serif; font-weight: 700; }
+#touchClip .clip-txt b, #touchRotate h2 { font-family: Ubuntu, 'Noto Color Emoji', sans-serif; font-weight: 700; }
 
 #dwLongLife {
     position: fixed; z-index: 33; left: 50%; top: 0;
@@ -129,7 +129,7 @@ body.in-game .igc-title { font: 400 20px 'Lilita One', Ubuntu, sans-serif; lette
     padding: 12px 20px 14px; box-sizing: border-box;
     border: 0; border-radius: 8px;
     background: rgba(0, 0, 0, .5);
-    color: #fff; text-align: center; font-family: Ubuntu, sans-serif;
+    color: #fff; text-align: center; font-family: Ubuntu, 'Noto Color Emoji', sans-serif;
     transform: translate(-50%, -100%);
     pointer-events: auto;
 }
@@ -326,9 +326,9 @@ html[data-theme] #dwAchHome .ah-wait {
     box-shadow: none;
 }
 html[data-theme] #dwAchHome .ah-title { font: 400 22px/1.1 'Lilita One', Ubuntu, sans-serif; letter-spacing: .01em; }
-html[data-theme] #dwAchHome :is(.ah-label, .ah-reward, .ah-jar, .ah-foot) { font-family: Ubuntu, sans-serif; text-shadow: none; }
+html[data-theme] #dwAchHome :is(.ah-label, .ah-reward, .ah-jar, .ah-foot) { font-family: Ubuntu, 'Noto Color Emoji', sans-serif; text-shadow: none; }
 html[data-theme] #dwAchHome .ah-icon { border-radius: 10px; transform: none; }
-html[data-theme] #dwAchHome .ah-keep { border-radius: 8px; background: #4fcf5c; box-shadow: none; border: 2px solid #2c8f37; text-shadow: none; font-family: Ubuntu, sans-serif; }
+html[data-theme] #dwAchHome .ah-keep { border-radius: 8px; background: #4fcf5c; box-shadow: none; border: 2px solid #2c8f37; text-shadow: none; font-family: Ubuntu, 'Noto Color Emoji', sans-serif; }
 html[data-theme="light"] #dwAchHome .ah-card,
 html[data-theme="light"] #dwAchHome .ah-wait { background: rgba(255, 255, 255, 0.92); border-color: rgba(0, 0, 0, 0.16); color: #1f1f1f; }
 html[data-theme="light"] #dwAchHome .ah-label,

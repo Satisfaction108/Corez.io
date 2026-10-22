@@ -1,6 +1,9 @@
-// Raid perks: points on the raid board earn picks of one of three perks
-// (the first at 5,000, each later one 5,000 points further off than the one
-// before, at most MAX_PICKS). The build lives on your raid board row
+// Raid perks: points on the raid board earn picks of one of three perks. The
+// first comes at 5,000, and each later one costs much more than the one before
+// (pickAt: 5k, 20k, 45k, 80k...), so there is no cap on how many picks a long
+// raid can earn; every perk itself stops at tier IV (the two hidden-gun perks
+// at III), which is what keeps a build from running away. The build lives on
+// your raid board row
 // (dig_royale's raidStats), so every new body is handed it again, the way
 // bought stat points come back (shop.applyStatPoints). A death costs two
 // random perks (onDeath) and starts the milestones over from the new score.
@@ -24,60 +27,65 @@
 // no game running; scripts/test/raidPerks.test.js covers them.
 'use strict';
 
-// Pick k comes STEP * k points after pick k-1: 5,000, 15,000, 30,000, 50,000...
-// and nobody holds more than MAX_PICKS.
+// Pick k comes STEP * k^2 points in: 5,000, 20,000, 45,000, 80,000... No
+// overall cap: the curve itself is the limit.
 const STEP = 5000;
-const MAX_PICKS = 15;
 const OFFER_N = 3;
+// The tier cap: no perk offers a fifth level. The client draws the pips from
+// `max` (Twin Drill and Drone Bay stop at III, all the rest at IV).
+const MAX_TIER = 4;
 
-// max: how many times it stacks. w: how often it's offered (mining and
+// max: how many tiers it stacks to. w: how often it's offered (mining and
 // utility 3, survival 2, anything that adds damage to a fight 1).
 // icon: the client's glyph key (raidPerks.js GLYPH).
 const CATALOG = [
-    { id: 'drill',      name: 'Power Drill',     icon: 'drill',      max: 5, w: 3, kind: 'mine',  desc: 'You mine 20% faster.' },
-    { id: 'blast',      name: 'Blast Rounds',    icon: 'blast',      max: 5, w: 3, kind: 'mine',  desc: 'Shots that hit rock crack the rock around them.' },
-    { id: 'rich',       name: 'Rich Veins',      icon: 'rich',       max: 5, w: 3, kind: 'mine',  desc: 'Ore you break drops 12% more gems.' },
-    { id: 'magnet',     name: 'Ore Magnet',      icon: 'magnet',     max: 5, w: 3, kind: 'util',  desc: 'Gems fly to you from 40% farther away.' },
-    { id: 'quake',      name: 'Seismic Pulse',   icon: 'quake',      max: 4, w: 3, kind: 'mine',  desc: 'Every few seconds a pulse cracks the rock around you.' },
-    { id: 'chain',      name: 'Chain Spark',     icon: 'chain',      max: 5, w: 3, kind: 'mine',  desc: 'Hitting rock can send a spark into nearby rock.' },
-    { id: 'pierce',     name: 'Piercing Rounds', icon: 'pierce',     max: 5, w: 3, kind: 'mine',  desc: 'Shots punch through one more rock.' },
-    { id: 'crit',       name: 'Lucky Strike',    icon: 'crit',       max: 5, w: 3, kind: 'mine',  desc: '12% of your shots hit rock for triple damage.' },
-    { id: 'grind',      name: 'Hull Grinder',    icon: 'grind',      max: 5, w: 3, kind: 'mine',  desc: 'Ramming rock grinds it down 25% faster.' },
-    { id: 'prospector', name: 'Prospector',      icon: 'prospector', max: 5, w: 3, kind: 'mine',  desc: 'Plain rocks you break have a higher chance to drop bonus copper.' },
-    { id: 'shatter',    name: 'Quake Shatter',   icon: 'shatter',    max: 5, w: 3, kind: 'mine',  desc: 'Breaking a rock blasts neighboring rocks for 18% of their health.' },
-    { id: 'chipper',    name: 'Chip Collector',  icon: 'chipper',    max: 5, w: 3, kind: 'mine',  desc: 'Chipping ore rocks pays out 25% more gems right into your satchel.' },
-    { id: 'satchel',    name: 'Deep Pockets',    icon: 'satchel',    max: 3, w: 3, kind: 'util',  desc: 'Your satchel holds 4,000 more gems per stack.' },
-    { id: 'tractor',    name: 'Tractor Beam',    icon: 'tractor',    max: 5, w: 3, kind: 'util',  desc: 'Gems pulled by your magnet fly into your tank 30% faster.' },
-    { id: 'stormward',  name: 'Storm Ward',      icon: 'stormward',  max: 5, w: 2, kind: 'util',  desc: 'You take 15% less damage from the storm circle.' },
-    { id: 'speed',      name: 'Swift Treads',    icon: 'speed',      max: 5, w: 3, kind: 'move',  desc: 'You move 6% faster.' },
-    { id: 'surge',      name: 'Gem Surge',       icon: 'surge',      max: 5, w: 3, kind: 'move',  desc: 'Picking up a gem boosts your speed by 8% for 3 seconds.' },
-    { id: 'hide',       name: 'Thick Hide',      icon: 'hide',       max: 5, w: 2, kind: 'tough', desc: 'You get 7% more max health.' },
-    { id: 'regen',      name: 'Field Repair',    icon: 'regen',      max: 4, w: 2, kind: 'tough', desc: 'After 5 seconds out of a fight, you heal 1.2% of your health per second.' },
-    { id: 'aegis',      name: 'Aegis Shield',    icon: 'aegis',      max: 5, w: 2, kind: 'tough', desc: 'Your shield holds 15% more and recovers faster.' },
+    { id: 'drill',      name: 'Power Drill',     icon: 'drill',      max: MAX_TIER, w: 3, kind: 'mine',  desc: 'You mine 20% faster.' },
+    { id: 'blast',      name: 'Blast Rounds',    icon: 'blast',      max: MAX_TIER, w: 3, kind: 'mine',  desc: 'Shots that hit rock crack the rock around them.' },
+    { id: 'rich',       name: 'Rich Veins',      icon: 'rich',       max: MAX_TIER, w: 3, kind: 'mine',  desc: 'Ore you break drops 12% more gems.' },
+    { id: 'magnet',     name: 'Ore Magnet',      icon: 'magnet',     max: MAX_TIER, w: 3, kind: 'util',  desc: 'Gems fly to you from 40% farther away.' },
+    { id: 'quake',      name: 'Seismic Pulse',   icon: 'quake',      max: MAX_TIER, w: 3, kind: 'mine',  desc: 'Every few seconds a pulse cracks the rock around you.' },
+    { id: 'chain',      name: 'Chain Spark',     icon: 'chain',      max: MAX_TIER, w: 3, kind: 'mine',  desc: 'Hitting rock can send a spark into nearby rock.' },
+    { id: 'pierce',     name: 'Piercing Rounds', icon: 'pierce',     max: MAX_TIER, w: 3, kind: 'mine',  desc: 'Shots punch through one more rock.' },
+    { id: 'crit',       name: 'Lucky Strike',    icon: 'crit',       max: MAX_TIER, w: 3, kind: 'mine',  desc: '12% of your shots hit rock for triple damage.' },
+    { id: 'grind',      name: 'Hull Grinder',    icon: 'grind',      max: MAX_TIER, w: 3, kind: 'mine',  desc: 'Ramming rock grinds it down 25% faster.' },
+    { id: 'prospector', name: 'Prospector',      icon: 'prospector', max: MAX_TIER, w: 3, kind: 'mine',  desc: 'Plain rocks you break have a higher chance to drop bonus copper.' },
+    { id: 'shatter',    name: 'Quake Shatter',   icon: 'shatter',    max: MAX_TIER, w: 3, kind: 'mine',  desc: 'Breaking a rock blasts neighboring rocks for 18% of their health.' },
+    { id: 'chipper',    name: 'Chip Collector',  icon: 'chipper',    max: MAX_TIER, w: 3, kind: 'mine',  desc: 'Chipping ore rocks pays out 25% more gems right into your satchel.' },
+    { id: 'satchel',    name: 'Deep Pockets',    icon: 'satchel',    max: MAX_TIER, w: 3, kind: 'util',  desc: 'Your satchel holds 4,000 more gems per stack.' },
+    { id: 'tractor',    name: 'Tractor Beam',    icon: 'tractor',    max: MAX_TIER, w: 3, kind: 'util',  desc: 'Gems pulled by your magnet fly into your tank 30% faster.' },
+    { id: 'stormward',  name: 'Storm Ward',      icon: 'stormward',  max: MAX_TIER, w: 2, kind: 'util',  desc: 'You take 15% less damage from the storm circle.' },
+    { id: 'speed',      name: 'Swift Treads',    icon: 'speed',      max: MAX_TIER, w: 3, kind: 'move',  desc: 'You move 6% faster.' },
+    { id: 'surge',      name: 'Gem Surge',       icon: 'surge',      max: MAX_TIER, w: 3, kind: 'move',  desc: 'Picking up a gem boosts your speed by 8% for 3 seconds.' },
+    { id: 'hide',       name: 'Thick Hide',      icon: 'hide',       max: MAX_TIER, w: 2, kind: 'tough', desc: 'You get 7% more max health.' },
+    { id: 'regen',      name: 'Field Repair',    icon: 'regen',      max: MAX_TIER, w: 2, kind: 'tough', desc: 'After 5 seconds out of a fight, you heal 1.2% of your health per second.' },
+    { id: 'aegis',      name: 'Aegis Shield',    icon: 'aegis',      max: MAX_TIER, w: 2, kind: 'tough', desc: 'Your shield holds 15% more and recovers faster.' },
+    // three barrels / six swarmers is the most their guns can take
     { id: 'twin',       name: 'Twin Drill',      icon: 'twin',       max: 3, w: 1, kind: 'fight', desc: 'Your barrels fire an extra shot that only drills rock.' },
     { id: 'drones',     name: 'Drone Bay',       icon: 'drones',     max: 3, w: 1, kind: 'fight', desc: 'Adds swarm drones that only chew rock.' },
-    { id: 'reload',     name: 'Overclock',       icon: 'reload',     max: 5, w: 1, kind: 'fight', desc: 'You reload 5% faster.' },
-    { id: 'velocity',   name: 'High Velocity',   icon: 'velocity',   max: 5, w: 1, kind: 'fight', desc: 'Your shots fly 6% faster and reach farther.' },
+    { id: 'reload',     name: 'Overclock',       icon: 'reload',     max: MAX_TIER, w: 1, kind: 'fight', desc: 'You reload 5% faster.' },
+    { id: 'velocity',   name: 'High Velocity',   icon: 'velocity',   max: MAX_TIER, w: 1, kind: 'fight', desc: 'Your shots fly 6% faster and reach farther.' },
 ];
 const BY_ID = new Map(CATALOG.map(p => [p.id, p]));
 
 // ── milestones ───────────────────────────────────────────────────────────
 // The score pick k (1-based) comes at.
-function pickAt(k) { return STEP * k * (k + 1) / 2; }
-// How many picks a board score has earned in all.
+function pickAt(k) { return STEP * k * k; }
+// How many picks a board score has earned in all. (No cap: the quadratic
+// curve keeps late picks far apart. The bound only stops a silly value from
+// spinning forever.)
 function earnedAt(score) {
     const s = +score || 0;
     let k = 0;
-    while (k < MAX_PICKS && pickAt(k + 1) <= s) k++;
+    while (k < 100000 && pickAt(k + 1) <= s) k++;
     return k;
 }
-// The score the next pick comes at, once `granted` have been earned (0: none left).
-function nextAt(granted) { return (granted | 0) >= MAX_PICKS ? 0 : pickAt((granted | 0) + 1); }
+// The score the next pick comes at. There is always a next one.
+function nextAt(granted) { return pickAt((granted | 0) + 1); }
 
 // A build from anywhere (a save, an update, an older rule set) brought in line
-// with today's catalog and cap: perks that are gone or past their max are cut,
-// then the biggest stacks give back levels until it fits under MAX_PICKS.
-const RULES = 2;
+// with today's catalog: perks that are gone or past tier IV are cut. Total
+// picks are not capped any more, so old builds keep every valid stack.
+const RULES = 3;
 function sanitize(build) {
     if (!build || build.rules === RULES) return build;
     const perks = {};
@@ -86,20 +94,11 @@ function sanitize(build) {
         const n = Math.min(p ? p.max : 0, build.perks[id] | 0);
         if (n > 0) perks[id] = n;
     }
-    let total = 0;
-    for (const id in perks) total += perks[id];
-    while (total > MAX_PICKS) {
-        let top = null;
-        for (const id in perks) if (!top || perks[id] > perks[top]) top = id;
-        if (--perks[top] <= 0) delete perks[top];
-        total--;
-    }
     build.perks = perks;
-    build.granted = Math.min(build.granted | 0, MAX_PICKS);
-    const room = Math.max(0, MAX_PICKS - total);
+    build.granted = Math.max(0, build.granted | 0);
     const offer = Array.isArray(build.offer) ? build.offer.filter(id => BY_ID.has(id)) : null;
-    build.offer = room > 0 && offer && offer.length ? offer : null;
-    build.pending = Math.max(0, Math.min(build.pending | 0, room - (build.offer ? 1 : 0)));
+    build.offer = offer && offer.length ? offer : null;
+    build.pending = Math.max(0, build.pending | 0);
     if (!build.offer && build.pending > 0) { build.pending--; build.offer = rollOffer(build); if (!build.offer.length) { build.offer = null; build.pending = 0; } }
     build.rules = RULES;
     build.v = (build.v | 0) + 1;
@@ -197,10 +196,9 @@ function grant(build, n = 1, rng = Math.random) {
     if (!build || !(n > 0)) return false;
     let opened = false;
     for (let i = 0; i < n; i++) {
-        if (totalPicks(build) + (build.offer ? 1 : 0) + (build.pending | 0) >= MAX_PICKS) break;
         if (!build.offer) {
             const o = rollOffer(build, rng);
-            if (!o.length) continue;      // everything is maxed out
+            if (!o.length) break;         // everything is maxed out
             build.offer = o;
             opened = true;
         } else build.pending++;
@@ -224,7 +222,7 @@ function pick(build, id, rng = Math.random) {
     if (!build || !build.offer || typeof id !== 'string') return false;
     if (!build.offer.includes(id)) return false;
     const p = BY_ID.get(id);
-    if (!p || (build.perks[id] | 0) >= p.max || totalPicks(build) >= MAX_PICKS) return false;
+    if (!p || (build.perks[id] | 0) >= p.max) return false;
     build.perks[id] = (build.perks[id] | 0) + 1;
     build.offer = null;
     while (build.pending > 0 && !build.offer) {
@@ -246,10 +244,9 @@ function botPick(build, rng = Math.random) {
 function snapshot(build) {
     const b = build || newBuild();
     const list = perkList(b).map(p => ({ id: p.id, n: p.n, max: p.max, name: p.name, desc: BY_ID.get(p.id).desc }));
-    const full = totalPicks(b) + (b.offer ? 1 : 0) + (b.pending | 0) >= MAX_PICKS;
-    const at = full ? 0 : nextAt(b.granted);
-    const next = at ? at + (+b.base || 0) : 0;
-    return { o: describeOffer(b), q: b.pending | 0, b: list, g: b.granted | 0, next, step: at ? at - pickAt(b.granted | 0) : 0, max: MAX_PICKS, v: b.v | 0 };
+    const at = nextAt(b.granted);
+    const next = at + (+b.base || 0);
+    return { o: describeOffer(b), q: b.pending | 0, b: list, g: b.granted | 0, next, step: at - pickAt(b.granted | 0), v: b.v | 0 };
 }
 
 // The effect table every hook reads (body._pkfx). Null for an empty build,
@@ -595,7 +592,7 @@ function onGemHeal(body) {
 }
 
 module.exports = {
-    STEP, MAX_PICKS, OFFER_N, UPGRADE_W, CATALOG, BY_ID, pickAt, earnedAt, nextAt, newBuild, sanitize, rollOffer, describeOffer, perkList, totalPicks,
+    STEP, MAX_TIER, OFFER_N, UPGRADE_W, CATALOG, BY_ID, pickAt, earnedAt, nextAt, newBuild, sanitize, rollOffer, describeOffer, perkList, totalPicks,
     grant, syncScore, pick, botPick, snapshot, computeFx, onDeath, DEATH_LOSS,
     applyToBody, clearBody, attachGuns, detachGuns, gunDefs,
     critMult, skipPassed, afterRockHit, breakRock, tickBody, onGemHeal, fxNear, PIERCE_TANK_DAMAGE,
