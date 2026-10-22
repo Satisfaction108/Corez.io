@@ -260,7 +260,7 @@ function paintTankBoard(el, d, tabs, head, meId, loggedIn) {
         style: {
             width: '100%', boxSizing: 'border-box', marginBottom: '10px', padding: '8px 12px',
             borderRadius: '8px', border: '2px solid var(--line)', background: 'var(--bg)',
-            color: 'var(--text)', font: '600 13px 'Noto Color Emoji', var(--ui)', outline: 'none',
+            color: 'var(--text)', font: '600 13px "Noto Color Emoji", var(--ui)', outline: 'none',
         },
     });
     const body = h('div', {

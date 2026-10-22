@@ -73,7 +73,7 @@ function draw() {
         const br = D.branches[b.b];
         ctx.fillStyle = br.color;
         ctx.beginPath(); ctx.arc(b.x + 2, b.y + 12, 6, 0, Math.PI * 2); ctx.fill();
-        ctx.font = '22px "Lilita One", Rubik, 'Noto Color Emoji', sans-serif'; ctx.textBaseline = "middle"; ctx.textAlign = "left";
+        ctx.font = '22px "Lilita One", Rubik, "Noto Color Emoji", sans-serif'; ctx.textBaseline = "middle"; ctx.textAlign = "left";
         ctx.fillStyle = pal.ink; ctx.fillText(br.name, b.x + 14, b.y + 13);
         const w = ctx.measureText(br.name).width;
         ctx.font = "500 13px Rubik, system-ui, sans-serif"; ctx.fillStyle = pal.soft;
