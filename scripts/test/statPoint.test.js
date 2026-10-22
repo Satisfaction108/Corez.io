@@ -48,14 +48,14 @@ function socket() {
     return s;
 }
 
-test('buy: 1,000 banked gems for one extra point, as many as fit', () => {
+test('buy: 1,500 banked gems for one extra point, as many as fit', () => {
     const s = socket();
     const b = player(s);
-    s.gemBanked = 2500;
+    s.gemBanked = 3500;
     const p0 = b.skill.points;
     assert.equal(shop.buy(s, 'statpt'), true);
     assert.equal(b.skill.points, p0 + 1);
-    assert.equal(s.gemBanked, 1500);
+    assert.equal(s.gemBanked, 2000);
     assert.equal(shop.buy(s, 'statpt'), true, 'again');
     assert.equal(b.skill.points, p0 + 2);
     assert.equal(shop.buy(s, 'statpt'), false, 'not enough gems for a third');
@@ -65,7 +65,7 @@ test('buy: 1,000 banked gems for one extra point, as many as fit', () => {
 test('raid: a respawned tank gets its bought points again, once', () => {
     const s = socket();
     const b = player(s);
-    s.gemBanked = 1000;
+    s.gemBanked = 1500;
     shop.buy(s, 'statpt');
     const b2 = player(s);
     const p0 = b2.skill.points;
@@ -96,7 +96,7 @@ test('cap: at most 10 bought a raid, the 11th is refused and not charged', () =>
     for (let i = 0; i < 20; i++) if (shop.buy(s, 'statpt')) n++;
     assert.equal(shop.STATPT_MAX, 10);
     assert.equal(n, 10, 'bought ' + n);
-    assert.equal(s.gemBanked, 100000 - 10 * 1000, 'the extra tries cost nothing');
+    assert.equal(s.gemBanked, 100000 - 10 * 1500, 'the extra tries cost nothing');
     assert.ok(s.packets.some(p => JSON.stringify(p).includes('most stat points')), 'told why');
 });
 

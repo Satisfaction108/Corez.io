@@ -3389,7 +3389,7 @@ class socketManager {
                 score: socket.player.body.skill.score,
                 killCount: socket.player.body.killCount,
                 level: socket.player.body.skill.level,
-                skillcap: socket.player.body.skill.caps,
+                skillcap: socket.player.body.skill.baseCaps,
                 skill: socket.player.body.skill.raw,
                 points: socket.player.body.skill.points,
             }),

@@ -610,7 +610,7 @@ function init() {
             level: 1,
             operatorAccess: true,
             run: ({ player }) => {
-                let newSkillCaps = player.body.skill.caps.map((x)=> Math.max(0, x - 1));
+                let newSkillCaps = player.body.skill.baseCaps.map((x)=> Math.max(0, x - 1));
                 let maxSkillPoints = newSkillCaps.reduce((total, x) => total + x, 0);
                 player.body.skill.setCaps(newSkillCaps);
                 maxSkillPoints -= player.body.skill.raw.reduce((total, x) => total + x, 0);
@@ -626,7 +626,7 @@ function init() {
             level: 1,
             operatorAccess: true,
             run: ({ player }) => {
-                let skills = player.body.skill.caps.map((cap)=> cap = Math.min(20, cap + 1));
+                let skills = player.body.skill.baseCaps.map((cap)=> cap = Math.min(20, cap + 1));
                 player.body.skill.setCaps(skills);
                 player.body.syncTurrets();
                 player.body.refreshBodyAttributes();

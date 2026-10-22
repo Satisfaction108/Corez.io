@@ -892,10 +892,10 @@ test('shop: the new shelves (4 gear with the magnet back plus the Stat Point, mo
     assert.equal(abil.length, 7);
     assert.ok(!ids.includes('radar'), 'radar retired');
     for (const a of abil) {
-        assert.ok(a.cd >= 8000 && a.cd <= (a.id === 'burrow' ? 45000 : 25000), a.id + ' cd');
+        assert.ok(a.cd >= 8000 && a.cd <= (a.id === 'burrow' ? 45000 : a.id === 'rush' ? 40000 : 25000), a.id + ' cd');
         assert.ok(a.desc && !/—/.test(a.desc), a.id + ' desc');
     }
-    assert.ok(Math.min(...abil.map(a => a.price)) <= 700, 'a first ability after a bank or two');
+    assert.ok(Math.min(...abil.map(a => a.price)) <= 900, 'a first ability after a bank or two');
     for (const i of cat) assert.ok(!/—/.test(i.desc + i.name), 'no em dashes: ' + i.id);
 });
 
@@ -906,13 +906,13 @@ test('shop: buy an ability with banked gems, keep it through death, swap for fre
     s.gemBanked = 2000;
     t.shopOnPad = true;
     assert.ok(shop.buy(s, 'grapple'));
-    assert.equal(s.gemBanked, 1300);
+    assert.equal(s.gemBanked, 950);
     assert.equal(ab.equipped(t), 'grapple');
     assert.ok(shop.buy(s, 'pad'));
-    assert.equal(s.gemBanked, 700);
+    assert.equal(s.gemBanked, 50);
     assert.equal(ab.equipped(t), 'pad', 'the new one goes in the slot');
     assert.ok(shop.buy(s, 'grapple'), 'owned: equip');
-    assert.equal(s.gemBanked, 700, 'for free');
+    assert.equal(s.gemBanked, 50, 'for free');
     assert.equal(ab.equipped(t), 'grapple');
     assert.equal(shop.buy(s, 'grapple'), false, 'already equipped');
     // the ability key never swaps, pad or no pad
@@ -1231,7 +1231,7 @@ test('gem magnet: back on the shelf, pulls from almost twice as far for 5 minute
     t.shopOnPad = true;
     assert.equal(shop.magnetMult(t), 1);
     assert.ok(shop.buy(s, 'magnet'));
-    assert.equal(s.gemBanked, 1100);
+    assert.equal(s.gemBanked, 650);
     assert.ok(shop.magnetMult(t) >= 1.8 && shop.magnetMult(t) < 2);
     clock += 5 * 60 * 1000 + 100;
     assert.equal(shop.magnetMult(t), 1, 'runs out');

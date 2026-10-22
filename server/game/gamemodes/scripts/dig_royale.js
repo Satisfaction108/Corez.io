@@ -46,7 +46,7 @@ const tier5 = require('../../terrain/tier5.js');              // Tier 5 opens at
 const botTanks = require('../../../miscFiles/botTanks.js');
 const respawnBuild = require('../../terrain/respawnBuild.js');   // Respawn as / Last tank / Same stats buttons
 const autoStats = require('../../terrain/autoStats.js');   // unspent stat points placed after 20 s
-const raidPerks = require('../../terrain/raidPerks.js');   // a perk pick every 5,000 points, kept until the raid ends
+const raidPerks = require('../../terrain/raidPerks.js');   // perk picks from points (at most 15), a death takes two
 const crowns = require('../../terrain/crowns.js');         // crowns: the last storm's top 3 wear points-earning, stealable crowns
 const soloColor = require('../../terrain/soloColor.js');
 const alwaysOn = require('../../terrain/alwaysOn.js');
@@ -396,7 +396,7 @@ function dropStaleRowsOf(s, socket) {
     }
 }
 
-const AO_NUM = ['banked', 'kills', 'botKills', 'killPts', 'extra', 'evPts', 'revengeBonus', 'crownPts', 'crownSwing', 'crownLost', 'holds', 'bossKills', 'chests', 'aoPlayMs', 'evWins'];
+const AO_NUM = ['banked', 'kills', 'botKills', 'killPts', 'extra', 'evPts', 'revengeBonus', 'crownPts', 'crownSwing', 'crownLost', 'holds', 'bossKills', 'chests', 'aoPlayMs', 'evWins', 'deathCut'];
 function aoApply(s, data, add) {
     if (!s || !data) return;
     for (const f of AO_NUM) {
@@ -696,10 +696,22 @@ function bankPtsOf(s) {
     const b = Math.max(0, s.banked | 0), rb = Math.max(0, Math.min(b, s.restoredBanked | 0));
     return rb + bankWeight(b - rb);
 }
+// deathCut: what deaths took off the board (each one halves it)
 function scoreOf(s) {
     const p = scoreParts(s);
     const raw = p.bank + p.kills + p.crown;
-    return s && s.isBot ? botDimScore(raw) : raw;
+    const sc = s && s.isBot ? botDimScore(raw) : raw;
+    return s && s.deathCut > 0 ? Math.max(0, sc - s.deathCut) : sc;
+}
+// The parts as the HUD shows them: after a death they shrink in proportion,
+// so they still add up to the score.
+function shownParts(s) {
+    const p = scoreParts(s);
+    if (!(s.deathCut > 0)) return p;
+    const raw = p.bank + p.kills + p.crown, sc = scoreOf(s);
+    if (!(raw > 0)) return p;
+    const f = sc / raw, bank = Math.round(p.bank * f), kills = Math.round(p.kills * f);
+    return { bank, kills, crown: sc - bank - kills };
 }
 // Round 9: a bot's points past BOT_DIM_AT come in on a log curve (diminishing
 const BOT_DIM = process.env.ROYALE_BOT_DIM !== '0';
@@ -1222,7 +1234,7 @@ function broadcast(extra = {}) {
             if (!scanRocks) scanRocks = oreRocksForScan();
             scan = scanRocks.filter(r => (r.x - body.x) ** 2 + (r.y - body.y) ** 2 <= 1500 * 1500).slice(0, 24);
         }
-        const parts = mine ? scoreParts(mine) : null;
+        const parts = mine ? shownParts(mine) : null;
         // your crown: what it pays, and what a killer would take
         let crownMe;
         if (bodyLive && body.crowned) {
@@ -1238,7 +1250,7 @@ function broadcast(extra = {}) {
                 score: scoreOf(mine),
                 // the one definition: points = banked (b) + kills & bonuses (k) + crowns (c) (s
                 // g: banked gems when past the soft line (b is what they weigh), t / r: that line and its rate
-                pts: (mine.banked | 0) > parts.bank
+                pts: (mine.banked | 0) > bankPtsOf(mine)
                     ? { b: parts.bank, k: parts.kills, c: parts.crown, s: (mine.crownLost | 0) || undefined, g: mine.banked | 0, t: BANK_SOFT, r: BANK_SOFT_RATE }
                     : { b: parts.bank, k: parts.kills, c: parts.crown, s: (mine.crownLost | 0) || undefined },
                 // the last death this raid: points it cost (p), who (by), satchel dropped (c)
@@ -1888,8 +1900,15 @@ function respecForNewRaid(body) {
     } catch { /* */ }
 }
 
+// Every raid tank (players and bots) gets each stat cap this much lower than
+// its tank's own (9 -> 7, a smasher's 12 -> 10)
+const STAT_CAP_CUT = 2;
+function cutStatCaps(body) {
+    if (body && body.skill && body.skill.setCapCut) body.skill.setCapCut(STAT_CAP_CUT);
+}
 function freshRaidBody(body) {
     if (!body || body.isDead?.()) return;
+    cutStatCaps(body);
     killMinions(body);
     setLobby(body, false);
     setFrozen(body, false);
@@ -2325,6 +2344,7 @@ function spawnRaidBot(back = null) {
     bot.botRespawnsRemaining = 0;
     bot.royaleAlive = true;
     bot.royaleBornAt = now();
+    cutStatCaps(bot);
     bot.botGraceUntil = now() + FIRST_MINUTES.BOT_GRACE_BOT_MS;
     bot.weakDrillUntil = 0;
     try { gems.initSatchel(bot); } catch { /* */ }
@@ -2455,6 +2475,7 @@ function spawnTeamBot(team, near) {
     bot.botRespawnsRemaining = 0;
     bot.royaleAlive = true;
     bot.royaleBornAt = now();
+    cutStatCaps(bot);
     bot.weakDrillUntil = 0;
     try { gems.initSatchel(bot); } catch { /* */ }
     try { bot.refreshBodyAttributes(); } catch { /* */ }
@@ -2711,6 +2732,12 @@ function onCombatantDead(body) {
             tk: String(body.label || "Basic"),
         };
     }
+    if (s && !raidEndDeath) {
+        const cut = Math.floor(scoreOf(s) / 2);
+        if (cut > 0) s.deathCut = (s.deathCut || 0) + cut;
+        if (s.lastDeath && body.socket) s.lastDeath.h = cut > 0 ? cut : undefined;
+        if (PERKS_ON) guard('perks death', () => raidPerks.onDeath(perkBuildOf(s), scoreOf(s)));
+    }
     // achievements: the killer's and the victim's (O(1), sockets only)
     if (body.socket || (killerBody && killerBody.socket)) {
         guard('ach death', () => achHooks.onDeath(body, {
@@ -2878,12 +2905,14 @@ function onEvent(ev) {
 }
 
 // ── raid perks (terrain/raidPerks.js) ─────────────────────────────────────
-// Every 5,000 points on the board is a pick of three perks. The build sits on
-// the board row (raidStats), so it outlives every death in the raid, follows
-// a reconnect (claimResume re-keys the row) and is gone when the rows are:
-// a new raid, or the /raidreset staging wipe. An offer still open when you
-// die is still open when you drop back in, and milestones reached together
-// queue up behind it. Bots take a random pick a few seconds later.
+// Points on the board earn picks of three perks (raidPerks.pickAt: 5,000,
+// then each one 5,000 further off than the last, 15 at most). The build sits on
+// the board row (raidStats), follows a reconnect (claimResume re-keys the row)
+// and is gone when the rows are: a new raid, or the /raidreset staging wipe.
+// A death halves the board score (deathCut), takes two random perks and any
+// open offer, and the milestones count again from the halved score.
+// Milestones reached together queue up behind the open offer. Bots take a
+// random pick a few seconds later.
 // ROYALE_PERKS=0 switches the whole thing off.
 const PERKS_ON = process.env.ROYALE_PERKS !== '0';
 const PERK_TICK_MS = 250;
@@ -2891,7 +2920,7 @@ const BOT_PICK_MIN_MS = 2500, BOT_PICK_MAX_MS = 7000;
 function perkBuildOf(s) {
     if (!s) return null;
     if (!s.perks) s.perks = raidPerks.newBuild();
-    return s.perks;
+    return raidPerks.sanitize(s.perks);
 }
 function applyPerks(body, s) {
     if (!body) return;
@@ -2932,7 +2961,7 @@ function inspectOf(body, t = now()) {
         carried: (body.carriedGems || 0) | 0,
         hp: body.health ? [Math.round(body.health.amount), Math.round(body.health.max)] : null,
         shield: body.shield && body.shield.max > 0 ? [Math.round(body.shield.amount), Math.round(body.shield.max)] : null,
-        perks: s && s.perks ? raidPerks.perkList(s.perks).map(p => [p.name, p.n, p.max]) : [],
+        perks: s && s.perks ? raidPerks.perkList(perkBuildOf(s)).map(p => [p.name, p.n, p.max]) : [],
         ability: eq ? abName(eq) : null,
         abilities: ab ? ab.own.filter(id => id !== eq).map(abName) : [],
         twist: ab && ab.twist ? abName(ab.twist) : null,
@@ -3016,7 +3045,7 @@ function tickPerks(t, frozen = false) {
     // and every client hears about its own
     for (const client of connectedClients()) {
         const s = client.id ? raidStats.get("s:" + client.id) : null;
-        const b = s ? s.perks || null : null;
+        const b = s && s.perks ? raidPerks.sanitize(s.perks) : null;
         if (client._pkSentB !== b || client._pkSentV !== (b ? b.v : -1)) sendPerks(client, b);
     }
 }

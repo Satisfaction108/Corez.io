@@ -13,6 +13,9 @@ const EMERALD_COUNT = 3;
 
 const ORE_HP = { [ORE.NONE]: 1, [ORE.COPPER]: 1.5, [ORE.VEIN]: 1.85,
                  [ORE.SHARD]: 2.1, [ORE.EMERALD]: 4.2 };
+// The most of an ore rock's health one hit from a tank can take, however
+// stacked its mining is (an emerald always takes at least 7 hits).
+const ORE_HIT_CAP = { [ORE.COPPER]: 0.5, [ORE.VEIN]: 0.5, [ORE.SHARD]: 0.34, [ORE.EMERALD]: 0.15 };
 
 // Mirrored on the client: terrainRenderer.js GROW_MS / GROW_SCALE0.
 const GROW_TIMELINE_MS = 16_000;
@@ -1546,6 +1549,7 @@ class TerrainGrid {
     // Apply damage and queue a network delta. Returns true if it destroyed the rock.
     damageRock(rock, dmg, wx, wy, grind, owner) {
         if (!rock || (!rock.alive && !rock.growing) || !(dmg > 0)) return false;
+        if (owner && !grind && ORE_HIT_CAP[rock.ore] && rock.maxHealth > 0) dmg = Math.min(dmg, rock.maxHealth * ORE_HIT_CAP[rock.ore]);
 
         const wasGrowing = rock.growing;
         if (wasGrowing) rock.growDamage += dmg;

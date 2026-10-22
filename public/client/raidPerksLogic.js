@@ -24,6 +24,7 @@ export function parseState(raw) {
         granted: Math.max(0, d.g | 0),
         next: Math.max(0, +d.next || 0),
         step: Math.max(1, +d.step || 5000),
+        max: (d.max | 0) || 15,
         v: d.v | 0,
     };
 }
@@ -145,7 +146,7 @@ export function baseName(name) { return String(name || "").replace(/\s+(?:I|II|I
 // the level this pick gives you (a perk held at n goes to n + 1)
 export function nextLevel(p) { return Math.max(1, ((p && p.n) | 0) + 1); }
 // hover: the whole description and what changes, never cut
-export function lastsText(ao) { return ao ? "It lasts for the rest of the day." : "It lasts the whole raid."; }
+export function lastsText() { return "Dying takes two random perks."; }
 export function hoverText(p, ao) {
     if (!p) return null;
     const name = baseName(p.name || p.id), lv = nextLevel(p), max = (p.max | 0);
@@ -256,10 +257,14 @@ export function progress(score, next, step) {
 }
 
 // ── the death card ─────────────────────────────────────────────────────
-export const DEATH_LINE = "Your perks stay until the raid ends.";
-export const DEATH_LINE_AO = "Your perks stay until the daily reset.";
+export const DEATH_LINE = "Dying took two random perks and half your points.";
+export const DEATH_LINE_AO = DEATH_LINE;
 export function deathLine(build, ao) { return totalPicks(build) > 0 ? (ao ? DEATH_LINE_AO : DEATH_LINE) : ""; }
 
 // ── the first offer's intro ────────────────────────────────────────────
-export const INTRO_TEXT = "You get a perk every 5,000 points. It lasts the whole raid.";
-export const INTRO_TEXT_AO = "You get a perk every 5,000 points. It lasts for the rest of the day.";
+export const INTRO_TEXT = "Your first perk comes at 5,000 points and each one after takes more, up to 15. Dying halves your points, takes two random perks and starts the count over.";
+export const INTRO_TEXT_AO = INTRO_TEXT;
+export function badgeTip(st, score) {
+    if (!(st && st.next > 0)) return "You have all " + ((st && st.max) || 15) + " perks.";
+    return "Each perk takes more points than the last, up to " + (st.max || 15) + ". Next one at " + fmtNum(st.next) + ", you have " + fmtNum(score) + ".";
+}

@@ -42,6 +42,8 @@ class Skill {
         // Just skill stuff.
         this.raw = pad(inital, 0);
         this.caps = [];
+        this.baseCaps = [];
+        this.capCut = 0;
         this.setCaps(Array(SKILL_COUNT).fill(Config.skill_cap));
         this.name = [
             "Reload",
@@ -121,8 +123,16 @@ class Skill {
     }
     setCaps(thing) {
         const t = pad(thing, Config.skill_cap);
-        for (let i = 0; i < SKILL_COUNT; i++) this.caps[i] = t[i];
+        for (let i = 0; i < SKILL_COUNT; i++) {
+            this.baseCaps[i] = t[i];
+            this.caps[i] = Math.max(0, t[i] - this.capCut);
+        }
         this.update();
+    }
+    // Every cap this body gets from now on (a define, an upgrade) is n lower
+    setCapCut(n) {
+        this.capCut = Math.max(0, n | 0);
+        this.setCaps(this.baseCaps.slice());
     }
     maintain() {
         if (this.score - this.deduction < this.levelScore) return false;

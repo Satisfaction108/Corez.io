@@ -1,9 +1,10 @@
-// Raid perks: every 5,000 points on the raid board you get to pick one of
-// three perks, and the pick stays with you until the raid ends. Death
-// doesn't take it: the build lives on your raid board row (dig_royale's
-// raidStats), so every new body is handed the same build again, the way
-// bought stat points come back (shop.applyStatPoints). A new raid, or the
-// /raidreset staging lobby, starts everyone with an empty build.
+// Raid perks: points on the raid board earn picks of one of three perks
+// (the first at 5,000, each later one 5,000 points further off than the one
+// before, at most MAX_PICKS). The build lives on your raid board row
+// (dig_royale's raidStats), so every new body is handed it again, the way
+// bought stat points come back (shop.applyStatPoints). A death costs two
+// random perks (onDeath) and starts the milestones over from the new score.
+// A new raid, or the /raidreset staging lobby, starts everyone with an empty build.
 //
 // Ported from the Dig Deep prototype (deepPerks.js) and retuned for PvP:
 // mining, utility and mobility are strong and offered more often, anything
@@ -15,7 +16,7 @@
 //   shop.applyPassives    speed, health, satchel size
 //   mining.gearMult       dig power;  game/index.js: dig budget + shot perks
 //   gun.js                reload
-//   gems.js               magnet reach, ore value, gem leech
+//   gems.js               magnet reach, ore value, gem surge
 //   hidden guns           twin barrel, drone bay (mounted like shop sidearms
 //                         and put back after an evolution)
 //
@@ -23,8 +24,10 @@
 // no game running; scripts/test/raidPerks.test.js covers them.
 'use strict';
 
-// Points between picks: 5,000, 10,000, 15,000...
+// Pick k comes STEP * k points after pick k-1: 5,000, 15,000, 30,000, 50,000...
+// and nobody holds more than MAX_PICKS.
 const STEP = 5000;
+const MAX_PICKS = 15;
 const OFFER_N = 3;
 
 // max: how many times it stacks. w: how often it's offered (mining and
@@ -50,8 +53,6 @@ const CATALOG = [
     { id: 'surge',      name: 'Gem Surge',       icon: 'surge',      max: 5, w: 3, kind: 'move',  desc: 'Picking up a gem boosts your speed by 8% for 3 seconds.' },
     { id: 'hide',       name: 'Thick Hide',      icon: 'hide',       max: 5, w: 2, kind: 'tough', desc: 'You get 7% more max health.' },
     { id: 'regen',      name: 'Field Repair',    icon: 'regen',      max: 4, w: 2, kind: 'tough', desc: 'After 5 seconds out of a fight, you heal 1.2% of your health per second.' },
-    { id: 'vamp',       name: 'Gem Leech',       icon: 'vamp',       max: 4, w: 2, kind: 'tough', desc: 'Every gem you pick up heals you a little.' },
-    { id: 'plating',    name: 'Ore Plating',     icon: 'plating',    max: 5, w: 2, kind: 'tough', desc: 'Breaking an ore rock repairs 4% of your max health and shield.' },
     { id: 'aegis',      name: 'Aegis Shield',    icon: 'aegis',      max: 5, w: 2, kind: 'tough', desc: 'Your shield holds 15% more and recovers faster.' },
     { id: 'twin',       name: 'Twin Drill',      icon: 'twin',       max: 3, w: 1, kind: 'fight', desc: 'Your barrels fire an extra shot that only drills rock.' },
     { id: 'drones',     name: 'Drone Bay',       icon: 'drones',     max: 3, w: 1, kind: 'fight', desc: 'Adds swarm drones that only chew rock.' },
@@ -61,17 +62,77 @@ const CATALOG = [
 const BY_ID = new Map(CATALOG.map(p => [p.id, p]));
 
 // ── milestones ───────────────────────────────────────────────────────────
+// The score pick k (1-based) comes at.
+function pickAt(k) { return STEP * k * (k + 1) / 2; }
 // How many picks a board score has earned in all.
-function earnedAt(score) { return Math.max(0, Math.floor((+score || 0) / STEP)); }
-// The score the next pick comes at, once `granted` have been earned.
-function nextAt(granted) { return ((granted | 0) + 1) * STEP; }
+function earnedAt(score) {
+    const s = +score || 0;
+    let k = 0;
+    while (k < MAX_PICKS && pickAt(k + 1) <= s) k++;
+    return k;
+}
+// The score the next pick comes at, once `granted` have been earned (0: none left).
+function nextAt(granted) { return (granted | 0) >= MAX_PICKS ? 0 : pickAt((granted | 0) + 1); }
+
+// A build from anywhere (a save, an update, an older rule set) brought in line
+// with today's catalog and cap: perks that are gone or past their max are cut,
+// then the biggest stacks give back levels until it fits under MAX_PICKS.
+const RULES = 2;
+function sanitize(build) {
+    if (!build || build.rules === RULES) return build;
+    const perks = {};
+    for (const id of Object.keys(build.perks || {})) {
+        const p = BY_ID.get(id);
+        const n = Math.min(p ? p.max : 0, build.perks[id] | 0);
+        if (n > 0) perks[id] = n;
+    }
+    let total = 0;
+    for (const id in perks) total += perks[id];
+    while (total > MAX_PICKS) {
+        let top = null;
+        for (const id in perks) if (!top || perks[id] > perks[top]) top = id;
+        if (--perks[top] <= 0) delete perks[top];
+        total--;
+    }
+    build.perks = perks;
+    build.granted = Math.min(build.granted | 0, MAX_PICKS);
+    const room = Math.max(0, MAX_PICKS - total);
+    const offer = Array.isArray(build.offer) ? build.offer.filter(id => BY_ID.has(id)) : null;
+    build.offer = room > 0 && offer && offer.length ? offer : null;
+    build.pending = Math.max(0, Math.min(build.pending | 0, room - (build.offer ? 1 : 0)));
+    if (!build.offer && build.pending > 0) { build.pending--; build.offer = rollOffer(build); if (!build.offer.length) { build.offer = null; build.pending = 0; } }
+    build.rules = RULES;
+    build.v = (build.v | 0) + 1;
+    return build;
+}
 
 // perks: id -> stacks. offer: the three on the table (or null). pending:
 // milestones reached that wait behind the current offer. granted: milestones
-// handed out so far (a high-water mark: points lost later never take one
-// back). v: bumps on every change, so a body and a client know they're stale.
+// handed out since the last death (a high-water mark: points lost later never
+// take one back). base: the score milestones count from (the score at the last
+// respawn). v: bumps on every change, so a body and a client know they're stale.
 function newBuild() {
-    return { perks: {}, offer: null, pending: 0, granted: 0, v: 0 };
+    return { perks: {}, offer: null, pending: 0, granted: 0, base: 0, v: 0, rules: RULES };
+}
+
+// A death: two random perks go (every level of each), anything unpicked goes,
+// and the milestones start over (5,000, 15,000, ...) from the new score.
+const DEATH_LOSS = 2;
+function onDeath(build, score, rng = Math.random) {
+    if (!build) return [];
+    const ids = Object.keys(build.perks || {}).filter(id => (build.perks[id] | 0) > 0);
+    const lost = [];
+    while (lost.length < DEATH_LOSS && ids.length) {
+        const id = ids.splice(Math.floor(rng() * ids.length), 1)[0];
+        delete build.perks[id];
+        lost.push(id);
+    }
+    build.offer = null;
+    build.pending = 0;
+    build.granted = 0;
+    build.base = Math.max(0, +score || 0);
+    build.v = (build.v | 0) + 1;
+    return lost;
 }
 
 // Three different perks that still have room, weighted toward mining and
@@ -136,6 +197,7 @@ function grant(build, n = 1, rng = Math.random) {
     if (!build || !(n > 0)) return false;
     let opened = false;
     for (let i = 0; i < n; i++) {
+        if (totalPicks(build) + (build.offer ? 1 : 0) + (build.pending | 0) >= MAX_PICKS) break;
         if (!build.offer) {
             const o = rollOffer(build, rng);
             if (!o.length) continue;      // everything is maxed out
@@ -149,7 +211,7 @@ function grant(build, n = 1, rng = Math.random) {
 // Catch the build up with a board score. -> how many picks it just earned.
 function syncScore(build, score, rng = Math.random) {
     if (!build) return 0;
-    const n = earnedAt(score) - (build.granted | 0);
+    const n = earnedAt((+score || 0) - (+build.base || 0)) - (build.granted | 0);
     if (n <= 0) return 0;
     build.granted += n;
     grant(build, n, rng);
@@ -162,7 +224,7 @@ function pick(build, id, rng = Math.random) {
     if (!build || !build.offer || typeof id !== 'string') return false;
     if (!build.offer.includes(id)) return false;
     const p = BY_ID.get(id);
-    if (!p || (build.perks[id] | 0) >= p.max) return false;
+    if (!p || (build.perks[id] | 0) >= p.max || totalPicks(build) >= MAX_PICKS) return false;
     build.perks[id] = (build.perks[id] | 0) + 1;
     build.offer = null;
     while (build.pending > 0 && !build.offer) {
@@ -184,7 +246,10 @@ function botPick(build, rng = Math.random) {
 function snapshot(build) {
     const b = build || newBuild();
     const list = perkList(b).map(p => ({ id: p.id, n: p.n, max: p.max, name: p.name, desc: BY_ID.get(p.id).desc }));
-    return { o: describeOffer(b), q: b.pending | 0, b: list, g: b.granted | 0, next: nextAt(b.granted), step: STEP, v: b.v | 0 };
+    const full = totalPicks(b) + (b.offer ? 1 : 0) + (b.pending | 0) >= MAX_PICKS;
+    const at = full ? 0 : nextAt(b.granted);
+    const next = at ? at + (+b.base || 0) : 0;
+    return { o: describeOffer(b), q: b.pending | 0, b: list, g: b.granted | 0, next, step: at ? at - pickAt(b.granted | 0) : 0, max: MAX_PICKS, v: b.v | 0 };
 }
 
 // The effect table every hook reads (body._pkfx). Null for an empty build,
@@ -210,7 +275,6 @@ function computeFx(perks) {
         crit: Math.min(0.6, 0.12 * n('crit')),
         regen: 0.012 * n('regen'),
         quake: n('quake'),
-        vamp: n('vamp'),
         twin: n('twin'),
         drones: n('drones'),
         grind: 1 + 0.25 * n('grind'),
@@ -220,7 +284,6 @@ function computeFx(perks) {
         tractor: 1 + 0.3 * n('tractor'),
         stormward: Math.max(0.2, 1 - 0.15 * n('stormward')),
         surge: 0.08 * n('surge'),
-        plating: 0.04 * n('plating'),
         aegis: 1 + 0.15 * n('aegis'),
         velocity: 1 + 0.06 * n('velocity'),
     };
@@ -374,17 +437,6 @@ function fxNear(x, y, kind, ...extra) {
 // broken by a splash doesn't count toward rocksMined: that counter also
 // drives the dry-streak copper (gems.pityBurst), and a blast breaking five
 // rocks at once would farm it.
-function onOreBreak(body) {
-    const fx = body && body._pkfx;
-    if (!fx || !(fx.plating > 0)) return;
-    if (body.health && body.health.max > 0) {
-        body.health.amount = Math.min(body.health.max, body.health.amount + body.health.max * fx.plating);
-    }
-    if (body.shield && body.shield.max > 0) {
-        body.shield.amount = Math.min(body.shield.max, body.shield.amount + body.shield.max * fx.plating);
-    }
-}
-
 function breakRock(tg, rock, dmg, owner, x, y) {
     if (!rock || !(rock.alive || rock.growing) || !(dmg > 0)) return false;
     const gems = require('./gems.js');
@@ -394,7 +446,6 @@ function breakRock(tg, rock, dmg, owner, x, y) {
         if (owner) {
             owner.rocksMined = (owner.rocksMined || 0) + 1;
             owner.gemsMined = (owner.gemsMined || 0) + 1;
-            onOreBreak(owner);
         }
         gems.spawnOreBurst(rock, owner);
     }
@@ -438,11 +489,10 @@ function afterRockHit(shot, owner, hitRocks, tg, raw) {
     if (!fx || !tg || owner.royaleLobby) return false;
     const t = Date.now();
     const x = shot.x, y = shot.y;
-    if ((fx.shatter > 0 || fx.plating > 0) && hitRocks.length) {
+    if (fx.shatter > 0 && hitRocks.length) {
         for (const hr of hitRocks) {
             if (!hr || hr.alive || hr.growing) continue;
-            if (fx.plating > 0 && hr.ore) onOreBreak(owner);
-            if (fx.shatter > 0 && tg.rocksHitByCircle) {
+            if (tg.rocksHitByCircle) {
                 const hx = rockX(hr), hy = rockY(hr);
                 scratch.length = 0;
                 const nbs = tg.rocksHitByCircle(hx, hy, 110, scratch).slice();
@@ -537,9 +587,6 @@ function tickBody(body, t, dt) {
 function onGemHeal(body) {
     const fx = body && body._pkfx;
     if (!fx) return;
-    if (fx.vamp > 0 && body.health) {
-        body.health.amount = Math.min(body.health.max, body.health.amount + body.health.max * 0.004 * fx.vamp);
-    }
     if (fx.surge > 0) {
         const had = !!(body._pkSurgeUntil && Date.now() < body._pkSurgeUntil);
         body._pkSurgeUntil = Date.now() + 3000;
@@ -548,8 +595,8 @@ function onGemHeal(body) {
 }
 
 module.exports = {
-    STEP, OFFER_N, UPGRADE_W, CATALOG, BY_ID, earnedAt, nextAt, newBuild, rollOffer, describeOffer, perkList, totalPicks,
-    grant, syncScore, pick, botPick, snapshot, computeFx,
+    STEP, MAX_PICKS, OFFER_N, UPGRADE_W, CATALOG, BY_ID, pickAt, earnedAt, nextAt, newBuild, sanitize, rollOffer, describeOffer, perkList, totalPicks,
+    grant, syncScore, pick, botPick, snapshot, computeFx, onDeath, DEATH_LOSS,
     applyToBody, clearBody, attachGuns, detachGuns, gunDefs,
-    critMult, skipPassed, afterRockHit, breakRock, onOreBreak, tickBody, onGemHeal, fxNear, PIERCE_TANK_DAMAGE,
+    critMult, skipPassed, afterRockHit, breakRock, tickBody, onGemHeal, fxNear, PIERCE_TANK_DAMAGE,
 };

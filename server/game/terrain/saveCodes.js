@@ -358,7 +358,7 @@ function applyShop(socket, body, rec, t) {
     for (const [id, left] of Object.entries(rec.gear || {})) {
         const item = sh.BY_ID.get(id);
         if (!item || item.cat !== 'gear' || !(left > 0)) continue;
-        if (!offered(item)) { refund += Math.round(item.price * Math.min(1, left / (5 * 60 * 1000))); continue; }
+        if (!offered(item)) { refund += Math.round((item.basePrice || item.price) * Math.min(1, left / (5 * 60 * 1000))); continue; }
         const until = t + Math.min(left, 5 * 60 * 1000);
         if (sh.gearActive(st, id)) { if (st.gear[id] !== true && st.gear[id] < until) st.gear[id] = until; continue; }
         if (running() >= (sh.GEAR_MAX || 4)) continue;
@@ -371,7 +371,7 @@ function applyShop(socket, body, rec, t) {
         const n = rec.kit && rec.kit[id] | 0;
         const item = sh.BY_ID.get(id);
         if (!item || item.cat !== 'kit' || n <= 0) continue;
-        if (!offered(item)) { refund += item.price * Math.min(item.max || 1, n); continue; }
+        if (!offered(item)) { refund += (item.basePrice || item.price) * Math.min(item.max || 1, n); continue; }
         const have = st.kit[id] | 0;
         if (!have && sh.kitCount(st.kitOrder) >= sh.KIT_SLOTS) continue;
         st.kit[id] = Math.min(item.max || 1, have + n);
@@ -400,7 +400,7 @@ function applyShop(socket, body, rec, t) {
                 ab.talkState(socket);
             } else {
                 // switched off: what they paid comes back
-                for (const id of rec.ab.own) { const it = sh.BY_ID.get(id); if (it) refund += it.price; }
+                for (const id of rec.ab.own) { const it = sh.BY_ID.get(id); if (it) refund += it.basePrice || it.price; }
             }
         } catch (e) { logErr('abilities', e); }
     }

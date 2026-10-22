@@ -60,7 +60,7 @@ const ABILITIES = [
       desc: "Raises a wall of rock where you aim, almost instantly. It stands for 20 seconds." },
     { id: "smoke",   name: "Smoke Bomb",   price: 600,  cd: 14000, trial: true, place: 550,
       desc: "Throws a smoke bomb up to 550m away that hides anyone inside the cloud for 11 seconds, boosts speed by 30%, and heals you." },
-    { id: "rush",    name: "Adrenaline",   price: 1000, cd: 24000, trial: true,
+    { id: "rush",    name: "Adrenaline",   price: 1000, cd: 40000, trial: true,
       desc: "You fire 60% faster and move 30% faster for 10 seconds." },
     { id: "pad",     name: "Launch Pad",   price: 600,  cd: 16000, trial: true, place: 600,
       desc: "Puts a pad where you aim that flings anyone who touches it. It lasts 30 seconds." },

@@ -1870,7 +1870,7 @@ class gameHandler {
         // raid perks (terrain/raidPerks.js): Power Drill and the extra barrels
         // raise the dig budget (the drill's damage side is in mining.gearMult),
         // and the shot perks (blast, chain, pierce, crit) live in raidPerks
-        const perkMine = (e) => e._pkfx ? (e._pkfx.budget || 1) : 1;
+        const perkMine = (e) => e._pkfx ? Math.min(mining.GEAR_CAP, e._pkfx.budget || 1) : 1;
         let raidPerksMod = null;
         const raidPerks = () => raidPerksMod || (raidPerksMod = require('./terrain/raidPerks.js'));
 

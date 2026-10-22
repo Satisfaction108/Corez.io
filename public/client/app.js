@@ -12757,7 +12757,7 @@ import * as tankRecords from './tankRecords.js';
         const rowH = 28;
         let headH = 0;
         if (tab === "standings") {
-            drawText(scoreText.RULE + ". Banked points are safe.", x + 18, y + 16, 12, HUD.text2, "left");
+            drawText(scoreText.RULE + ". Dying halves them.", x + 18, y + 16, 12, HUD.text2, "left");
             headH = 22;
         }
         const meHex = playerHexCol() || color.gold;
@@ -14650,6 +14650,7 @@ import * as tankRecords from './tankRecords.js';
         const notes = [];
         if (kept > 0) notes.push("Kept " + util.formatLargeNumber(kept));
         if (lostPts > 0) notes.push("Crown -" + util.formatLargeNumber(lostPts));
+        if (you.dl && you.dl.h > 0) notes.push("Death -" + util.formatLargeNumber(you.dl.h | 0));
         const noteLine = notes.join("  ·  ");
         const hasRank = !guest && rankPanel.hasContent();
         const rankH = hasRank ? rankPanel.panelHeight() : 0;

@@ -55,6 +55,10 @@ const ITEMS = [
     // abilities (abilities.js): owned for the raid, one in the slot at a time
     ...require('./abilities.js').catalog().map(a => Object.assign(a, { fresh: true })),
 ];
+// Every price above, raised by half (Oct 21 2026), to the nearest 50.
+// basePrice is the old one: what a save from before paid, and gets back.
+const PRICE_MULT = 1.5;
+for (const it of ITEMS) { it.basePrice = it.price; it.price = Math.round(it.price * PRICE_MULT / 50) * 50; }
 const BY_ID = new Map(ITEMS.map(i => [i.id, i]));
 
 let shops = null;

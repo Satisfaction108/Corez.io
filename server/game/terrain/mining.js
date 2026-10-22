@@ -67,7 +67,8 @@ function rockDamageFor(owner, projectile) {
 }
 
 // Shop and event multipliers stacked on top of the skill bar (drills,
-// overdrive, raid modifiers).
+// overdrive, raid modifiers), together never past GEAR_CAP.
+const GEAR_CAP = 3;
 let _shopMod = null, _raidMods = null;
 function gearMult(owner) {
     let m = 1;
@@ -82,7 +83,7 @@ function gearMult(owner) {
         _raidMods ||= require('./raidMods.js');
         m *= _raidMods.num('miningMult', 1);
     } catch { }
-    return m;
+    return Math.min(GEAR_CAP, m);
 }
 
 // THE mining speed knob (playtests: "mining is glacial without Mining
@@ -146,4 +147,4 @@ function grindSecondsFor(owner) {
     return sec;
 }
 
-module.exports = { digPower, rockDamageFor, skillFactor, grindSecondsFor, gearMult, MINE_BIAS, HELPER_DIG, SWARM_DIG, TYPE_DIG, BASE_BOOST, FULL_TRIM, SHOT_BARE, SHOT_SPAN, GRIND_BARE, GRIND_SPAN };
+module.exports = { digPower, rockDamageFor, skillFactor, grindSecondsFor, gearMult, GEAR_CAP, MINE_BIAS, HELPER_DIG, SWARM_DIG, TYPE_DIG, BASE_BOOST, FULL_TRIM, SHOT_BARE, SHOT_SPAN, GRIND_BARE, GRIND_SPAN };

@@ -1,6 +1,6 @@
-// Raid perks on the HUD: every 5,000 points on the raid board the server
-// offers three perks (PK packet) and the pick lasts until the raid ends,
-// deaths included. This file draws and handles:
+// Raid perks on the HUD: at each perk milestone on the raid board the server
+// offers three perks (PK packet); a death takes two random perks back.
+// This file draws and handles:
 //
 //   cards   a compact row low in the middle, above your name and satchel,
 //           clear of your tank, the stat bars, the kit box, the upgrade
@@ -388,7 +388,7 @@ function drawStrip(c, o, st, view, now) {
         const lv = ROMAN[p.n | 0] || "I", tx = r.x + r.h + 1, ty = r.y - lift + r.h / 2 + 0.5;
         lvPill(c, lv, tx, ty, 12);
         if (o.mouse && L.rectAt([r], o.mouse.x, o.mouse.y) >= 0 && A.queueTip) {
-            A.queueTip(perkLabel(p), (p.desc || "") + " You have level " + (p.n | 0 || 1) + (p.max ? " of " + p.max : "") + (global.aoWorld ? ", and it lasts for the rest of the day." : ", and it lasts the whole raid."), r.x + r.w / 2, r.y);
+            A.queueTip(perkLabel(p), (p.desc || "") + " You have level " + (p.n | 0 || 1) + (p.max ? " of " + p.max : "") + ". Dying takes two random perks.", r.x + r.w / 2, r.y);
         }
     }
     // the ones left out, behind a "+N" chip (hover lists them)
@@ -451,7 +451,7 @@ function drawStrip(c, o, st, view, now) {
         if (tot > 0) A.hudTitle(String(tot), cx, cy + 0.5, 11, "#ffffff", "center");
         else star(c, cx, cy, 5.5, 2.4, "rgba(255,243,217,0.55)");
         if (o.mouse && L.rectAt([b], o.mouse.x, o.mouse.y) >= 0 && A.queueTip) {
-            A.queueTip(global.aoWorld ? "Perks" : "Raid perks", "You get a perk every 5,000 points. Next one at " + L.fmtNum(st.next) + ", you have " + L.fmtNum(score) + ".", cx, b.y);
+            A.queueTip(global.aoWorld ? "Perks" : "Raid perks", L.badgeTip(st, score), cx, b.y);
         }
     }
 }
@@ -845,7 +845,7 @@ const GLYPH = {
 };
 
 // ── the death card ─────────────────────────────────────────────────────
-// app.js: "Your perks stay until the raid ends." with the build's icons
+// app.js: what a death took from the build, with its icons
 export function deathLine() { return L.deathLine(build(), !!global.aoWorld); }
 export function drawDeathIcons(c, x, y, s, a) {
     const b = build();

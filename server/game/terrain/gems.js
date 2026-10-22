@@ -708,7 +708,7 @@ function tickGem(gem, tg, players) {
         if (Config.dig_royale) { try { dustMod().onPickup(toucher, gem); } catch { /* */ } }
         updateSatchel(toucher);
         talkGems(toucher, v);
-        // Gem Leech (raidPerks.js)
+        // Gem Surge (raidPerks.js)
         if (toucher._pkfx) { try { require('./raidPerks.js').onGemHeal(toucher); } catch { /* */ } }
         gem.kill();
         return;

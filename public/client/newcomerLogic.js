@@ -125,7 +125,7 @@ export const INTROS = {
     hunted: { stage: 2, text: "You're carrying a lot, so you're being hunted. Bank to shake them." },
     twist: { stage: 2, text: "Each raid has an Override, a special rule you can see at the top left." },
     // raid perks (raidPerks.js): from the first raid, the first time an offer is up
-    perks: { stage: 0, text: "Every 5,000 points, you get to pick a perk for this raid.", ao: "Every 5,000 points, you get to pick a perk. It lasts for the rest of the day." },
+    perks: { stage: 0, text: "Points earn you perks, up to 15. Each one takes more points than the last, and dying takes two of them.", ao: "Points earn you perks, up to 15. Each one takes more points than the last, and dying takes two of them." },
 };
 // The intro to show the first time a piece appears, or "" (veterans, a
 // stage that hides the piece, or seen before).
