@@ -16,6 +16,8 @@ const ORE_HP = { [ORE.NONE]: 1, [ORE.COPPER]: 1.5, [ORE.VEIN]: 1.85,
 // The most of an ore rock's health one hit from a tank can take, however
 // stacked its mining is (an emerald always takes at least 7 hits).
 const ORE_HIT_CAP = { [ORE.COPPER]: 0.5, [ORE.VEIN]: 0.5, [ORE.SHARD]: 0.34, [ORE.EMERALD]: 0.15 };
+// Any one tank (its bullets and drones included) breaks at most this many rocks a second.
+const ROCK_BREAKS_PER_SEC = 6;
 
 // Mirrored on the client: terrainRenderer.js GROW_MS / GROW_SCALE0.
 const GROW_TIMELINE_MS = 16_000;
@@ -1547,9 +1549,20 @@ class TerrainGrid {
     }
 
     // Apply damage and queue a network delta. Returns true if it destroyed the rock.
-    damageRock(rock, dmg, wx, wy, grind, owner) {
+    damageRock(rock, dmg, wx, wy, grind, owner, uncapped) {
         if (!rock || (!rock.alive && !rock.growing) || !(dmg > 0)) return false;
         if (owner && !grind && ORE_HIT_CAP[rock.ore] && rock.maxHealth > 0) dmg = Math.min(dmg, rock.maxHealth * ORE_HIT_CAP[rock.ore]);
+
+        let breaker = owner;
+        for (let i = 0; breaker && breaker.master && breaker.master !== breaker && i < 8; i++) breaker = breaker.master;
+        const breaks = breaker && !uncapped && rock.health - dmg <= 0 ? (breaker._rockBreaks || (breaker._rockBreaks = [])) : null;
+        if (breaks) {
+            const t = Date.now();
+            while (breaks.length && t - breaks[0] >= 1000) breaks.shift();
+            if (breaks.length >= ROCK_BREAKS_PER_SEC) dmg = Math.max(0, rock.health - 1);
+            else breaks.push(t);
+            if (!(dmg > 0)) return false;
+        }
 
         const wasGrowing = rock.growing;
         if (wasGrowing) rock.growDamage += dmg;

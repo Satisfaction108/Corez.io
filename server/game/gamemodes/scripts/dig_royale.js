@@ -4706,7 +4706,7 @@ function growRoom(body, hold) {
         if (!(rock.alive || (hold && rock.growing)) || rock.canyon || rock.ore === 4) continue;
         const ore = rock.ore;
         const rx = rock.worldCx || rock.wx, ry = rock.worldCy || rock.wy;
-        if (!tg.damageRock(rock, rock.health + 1, rx, ry, false, hold ? null : body)) continue;
+        if (!tg.damageRock(rock, rock.health + 1, rx, ry, false, hold ? null : body, true)) continue;
         n++;
         if (hold) rock.noRegrowUntil = Math.max(rock.noRegrowUntil || 0, now() + FIRST_MINUTES.SPAWN_POCKET_HOLD_MS);
         else if (ore) { try { gems.spawnOreBurst(rock, body); } catch { /* */ } }
