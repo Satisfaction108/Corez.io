@@ -33,6 +33,8 @@ const HOLD_MS = (process.env.ROYALE_DEBUG && parseInt(process.env.ROYALE_SAVE_HO
 const PROGRESS_MS = 1000;
 const TRY_WINDOW_MS = 10 * 60 * 1000;
 const TRY_MAX = 6;
+const SAVE_MIN_SCORE = (process.env.ROYALE_DEBUG && /^\d+$/.test(process.env.ROYALE_SAVE_MIN_SCORE || ''))
+    ? parseInt(process.env.ROYALE_SAVE_MIN_SCORE, 10) : 10000;
 const SAVE_GAP_MS = 1000;       // start presses closer than this are ignored
 // this thread's raids (a save restored in the same raid removes its old row)
 const THREAD_TAG = crypto.randomBytes(6).toString('hex');
@@ -91,6 +93,26 @@ function inStorm(body) {
     try { return !!require('./storm.js').inStorm(body.x, body.y); } catch (e) { return false; }
 }
 
+function scoreNow(body) {
+    try { const s = ctx && ctx.stat(body); return s ? Math.max(0, ctx.scoreOf(s)) : 0; } catch (e) { return 0; }
+}
+
+function fullHealth(body) {
+    return !!body.health && body.health.amount >= body.health.max - 0.5;
+}
+
+function inOwnBase(body) {
+    try { return require('./teamLayout.js').inBase(body.team, body.x, body.y); } catch (e) { return false; }
+}
+
+function saveBlocker(body) {
+    const score = scoreNow(body);
+    if (score < SAVE_MIN_SCORE) return "You need at least " + fmt(SAVE_MIN_SCORE) + " score to save. You have " + fmt(score) + ".";
+    if (!fullHealth(body)) return "Heal up to full health first, then save.";
+    if (Config.royale_teams && !inOwnBase(body)) return "Head back to your team's base to save.";
+    return null;
+}
+
 function hpOf(body) {
     return ((body.health && body.health.amount) || 0) + ((body.shield && body.shield.amount) || 0);
 }
@@ -114,6 +136,8 @@ function start(socket) {
     const held = heldInput(socket);
     if (held) return refuse("Stop moving and shooting first, then save.");
     if (inStorm(body)) return refuse("Get out of the storm first.");
+    const blocker = saveBlocker(body);
+    if (blocker) return refuse(blocker);
     socket._lastSaveTry = t;
     socket._saving = { at: t, hp: hpOf(body), hitAt: body.hitAt || 0, lastSent: t };
     send(socket, { st: 'on', ms: HOLD_MS, left: HOLD_MS });
@@ -143,6 +167,7 @@ function tick(t, clients) {
         else if (heldInput(socket)) why = heldInput(socket) + ", so the save stopped. Stay still for " + Math.round(HOLD_MS / 1000) + " seconds.";
         else if ((body.hitAt || 0) > sv.hitAt || hpOf(body) < sv.hp - 0.5) why = "You took damage, so the save stopped.";
         else if (inStorm(body)) why = "The storm reached you, so the save stopped.";
+        else if (Config.royale_teams && !inOwnBase(body)) why = "You left your base, so the save stopped.";
         if (why) { cancel(socket, why); continue; }
         const left = sv.at + HOLD_MS - t;
         if (left <= 0) { finish(socket, body, t); continue; }

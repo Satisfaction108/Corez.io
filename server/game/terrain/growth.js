@@ -27,14 +27,19 @@ function enabled() {
 // 1 + GAIN*ln(1 + s/SCALE) up to KNEE_GROWTH, then eases toward MAX_GROWTH
 // with the same slope at the join so tanks stay agile in rock corridors.
 const MAX_GROWTH = 1.85;
+const TEAM_MAX_GROWTH = 5;
+const TEAM_GROW_RATE = 1.7;
 const KNEE_GROWTH = 1.45;
 const TAIL_AT = SCALE * (Math.exp((KNEE_GROWTH - 1) / GAIN) - 1);
-const TAIL_TAU = (MAX_GROWTH - KNEE_GROWTH) * (SCALE + TAIL_AT) / GAIN;
+const tailTau = max => (max - KNEE_GROWTH) * (SCALE + TAIL_AT) / GAIN;
+function teamGrowth() { return !!Config.royale_teams; }
+function maxGrowth() { return teamGrowth() ? TEAM_MAX_GROWTH : MAX_GROWTH; }
+function growRate() { return teamGrowth() ? TEAM_GROW_RATE : 1; }
 function multFor(score) {
     const s = Math.max(0, score || 0);
     if (s <= TAIL_AT) return 1 + GAIN * Math.log(1 + s / SCALE);
-    const x = s - TAIL_AT;
-    return KNEE_GROWTH + (MAX_GROWTH - KNEE_GROWTH) * x / (x + TAIL_TAU);
+    const x = s - TAIL_AT, max = maxGrowth(), tau = tailTau(max);
+    return KNEE_GROWTH + (max - KNEE_GROWTH) * x / (x + tau);
 }
 
 // the growth score that lands exactly on RESPAWN_CAP
@@ -66,9 +71,9 @@ function statMult(g) { return 1 + STAT_K * Math.log(Math.max(1, g)); }
 // Health and damage scale noticeably but fairly (+24% HP and +10% Damage at 1.85x ceiling)
 // so growing feels rewarding without making big players unkillable.
 const HEALTH_PER_X = 0.28;
-function healthMult(g) { return 1 + HEALTH_PER_X * (Math.min(MAX_GROWTH, Math.max(1, g)) - 1); }
+function healthMult(g) { return 1 + HEALTH_PER_X * (Math.min(maxGrowth(), Math.max(1, g)) - 1); }
 const DAMAGE_PER_X = 0.12;
-function damageMult(g) { return 1 + DAMAGE_PER_X * (Math.min(MAX_GROWTH, Math.max(1, g)) - 1); }
+function damageMult(g) { return 1 + DAMAGE_PER_X * (Math.min(maxGrowth(), Math.max(1, g)) - 1); }
 function bodyDamageMult(g) { return damageMult(g); }
 // The camera: arras' own sqrt(size) times this, so the view follows
 // g^VIEW_POW with no ceiling (the map edge is the limit).
@@ -129,7 +134,7 @@ function stageOf(g) {
 function onSpawn(body, score, keep) {
     if (!body) return;
     if (!enabled()) { body.growthMult = 1; return; }
-    const s = Math.max(0, score || 0) * scoreMult(body);
+    const s = Math.max(0, score || 0) * scoreMult(body) * growRate();
     body._growScore0 = s;
     body._growEff = keep > 0 ? keep : spawnEff(s);
     body._growTarget = capped(body, multFor(body._growEff));
@@ -155,7 +160,7 @@ function tick(t, bodies, scoreFor, onStage, onRefit) {
         if (!body || body.isDead?.()) continue;
         let score = scoreFor(body);
         if (score == null) continue;
-        score *= scoreMult(body);
+        score *= scoreMult(body) * growRate();
         if (body._growEff == null) {
             onSpawn(body, score);
             if (onRefit && body.growthMult > 1.15) { try { onRefit(body, true); } catch { /* */ } }
@@ -195,5 +200,5 @@ module.exports = {
     RESPAWN_SHARE, RESPAWN_CAP, STAGES, CAP_SCORE,
     BOT_SCORE_MULT, enabled, multFor, spawnEff, scoreMult, onSpawn, tick, applyPerks, stageOf,
     speedMult, healthMult, damageMult, bodyDamageMult, statMult, fovMult, viewMult, mineMult,
-    SCALE, GAIN, STAT_AT_100K, MAX_GROWTH, VIEW_POW, botDimAdd, BOT_DIM_AT, resizeKids,
+    SCALE, GAIN, STAT_AT_100K, MAX_GROWTH, TEAM_MAX_GROWTH, TEAM_GROW_RATE, maxGrowth, growRate, VIEW_POW, botDimAdd, BOT_DIM_AT, resizeKids,
 };

@@ -2076,6 +2076,8 @@ const BOSS_HUNTERS = 3;
 // a bot starts a fight with another bot only when the trade looks at least
 // this good (threatRatio; players follow botDifficulty.initThreat)
 const BOT_FIGHT_THREAT = 0.9;
+const STALL_KINDS = new Set(['collect', 'bank', 'rally', 'aogo', 'aoshoot', 'explore', 'chest', 'leaveZone', 'objective']);
+const STALL_MS = 4000, STALL_GAIN = 60, DETOUR_MS = 1800, DETOUR_REACH = 380, GEM_SKIP_MS = 20000, DIG_MS = 6000, DIG_PLAN_D = 1600;
 const GOAL_HOLD = {
     survive: 2200, regroup: 3000, bank: 7000, fight: 2800, collect: 2600,
     defend: 4500, objective: 9000, rally: 6000, chest: 7000, mine: 5000, explore: 9000, aoshoot: 6000, aogo: 6000,
@@ -2709,7 +2711,10 @@ class io_digWarsGoals extends IO {
         let best = null, bestScore = Infinity;
         const scan = botWorldScan();
         const tm = teamsOn();
+        const skip = this.skipGems;
+        if (skip && skip.size > 24) for (const [g, until] of skip) if (until < now) skip.delete(g);
         for (const gem of (scan.gemsFree || scan.gems)) {
+            if (skip && (skip.get(gem) || 0) > now) continue;
             // chamber loot repels its owning team
             if (gem.chamberBias && gem.chamberBias === body.team) continue;
             // owner-only pickups
@@ -3582,7 +3587,7 @@ class io_digWarsGoals extends IO {
                 return true;
             }
             case 'collect':
-                return goal.gem && goal.gem.gemValue > 0 && !goal.gem.isDead?.() &&
+                return goal.gem && goal.gem.gemValue > 0 && !goal.gem.isDead?.() && !((this.skipGems?.get(goal.gem) || 0) > now) &&
                     this.distanceTo(goal.gem) < 900 && !this.gemSealedInChamber(goal.gem);
             case 'defend':
                 return !!goal.point && goal.point.team === body.team && !!goal.point.banner;
@@ -4206,6 +4211,18 @@ class io_digWarsGoals extends IO {
         }
         if (goal.kind === 'defend' && goal.target)
             return { target: this.leadAim(goal.target, now), fire: this.triggerHeld(now, goal.target) };
+        const dig = this.dig;
+        if (dig && now < dig.until && dig.goal === goal && dig.path) {
+            if (now - dig.rockAt > 300) {
+                dig.rockAt = now;
+                const wp = dig.path[Math.min(dig.pi, dig.path.length - 1)];
+                const dx = wp.x - body.x, dy = wp.y - body.y, dd = Math.hypot(dx, dy) || 1, reach = Math.max(260, Math.min(dd + 120, this.weaponRange()));
+                dig.rock = this.firstRockAlong({ x: body.x + dx / dd * reach, y: body.y + dy / dd * reach });
+            }
+            const rock = dig.rock && dig.rock.alive ? dig.rock : null;
+            if (rock && this.distanceTo({ x: rock.wx, y: rock.wy }) - (rock.maxPolyRadius || 60) < this.weaponRange() * 0.95)
+                return { target: this.aimVector(rock.wx - body.x, rock.wy - body.y, now), fire: true };
+        }
         // regrouping: dig the straight way to the human
         if (goal.kind === 'regroup' && goal.mate) {
             const rock = this.regroupRock(goal);
@@ -4265,6 +4282,51 @@ class io_digWarsGoals extends IO {
     // part throttle.
     tempo(now) {
         return now < (this.hesitateUntil || 0) ? 0 : 1;
+    }
+
+    stallDetour(goal, destination, arrive, now) {
+        const body = this.body;
+        if (this.detour && now < this.detour.until && (this.detour.goal === goal || goal.kind !== 'leaveZone')) return this.detour.point;
+        this.detour = null;
+        const dig = this.dig;
+        if (dig && now < dig.until && dig.goal === goal) {
+            while (dig.path && dig.pi < dig.path.length - 1 && Math.hypot(dig.path[dig.pi].x - body.x, dig.path[dig.pi].y - body.y) < 110) dig.pi++;
+            const wp = dig.path && dig.path[dig.pi];
+            if (wp && Math.hypot(wp.x - body.x, wp.y - body.y) > 60) return wp;
+            if (!wp) return null;
+        }
+        this.dig = null;
+        const d = Math.hypot(destination.x - body.x, destination.y - body.y);
+        const near = d < arrive + 80;
+        const m = this.moveRef;
+        if (!m || near || Math.hypot(body.x - m.x, body.y - m.y) > STALL_GAIN) this.moveRef = { x: body.x, y: body.y, at: now };
+        let p = this.progress;
+        if (!p || p.goal !== goal) p = this.progress = { goal, best: d, at: now, stalls: 0 };
+        if (near || d < p.best - STALL_GAIN) { p.best = d; p.at = now; }
+        if (near || (now - p.at < STALL_MS && now - this.moveRef.at < STALL_MS)) return null;
+        const pinned = Math.hypot(body.x - this.moveRef.x, body.y - this.moveRef.y) < 20 && now - this.moveRef.at >= STALL_MS;
+        p.best = d; p.at = now; p.stalls++;
+        this.moveRef = { x: body.x, y: body.y, at: now };
+        if (goal.kind === 'collect' && goal.gem) {
+            (this.skipGems || (this.skipGems = new Map())).set(goal.gem, now + GEM_SKIP_MS);
+            this.holdUntil = 0;
+        } else if (p.stalls >= 2) this.holdUntil = 0;
+        const toward = Math.atan2(destination.y - body.y, destination.x - body.x);
+        if (pinned || (p.stalls >= 2 && goal.kind !== 'collect')) {
+            const reach = Math.min(d, DIG_PLAN_D);
+            const to = { x: body.x + Math.cos(toward) * reach, y: body.y + Math.sin(toward) * reach };
+            const path = planRoute(body, to, this.nav);
+            this.dig = { goal, until: now + DIG_MS, path: path && path.length ? path : [to], pi: 0, rockAt: 0, rock: null };
+            this.nav.samples.length = 0;
+            return this.dig.path[0];
+        }
+        this.nav.side ??= ran.chance(0.5) ? 1 : -1;
+        const side = p.stalls % 2 ? this.nav.side : -this.nav.side;
+        const angle = this.nav.bestEscape(toward + side * 1.7, this.nav.radius(), now);
+        this.nav.blocked.push({ angle: toward, until: now + DETOUR_MS + 1500 });
+        this.nav.samples.length = 0;
+        this.detour = { goal, until: now + DETOUR_MS, point: { x: body.x + Math.cos(angle) * DETOUR_REACH, y: body.y + Math.sin(angle) * DETOUR_REACH } };
+        return this.detour.point;
     }
 
     act(now) {
@@ -4491,6 +4553,11 @@ class io_digWarsGoals extends IO {
         const repel = teamsOn() ? this.titanRepel() : null;
         this._repelling = !!repel;
         if (repel) { direct = repel; this.nav.track(now, false); }
+        if (destination && !direct && STALL_KINDS.has(goal.kind)) {
+            const detour = this.stallDetour(goal, destination, arrive, now);
+            if (detour) { destination = detour; arrive = 40; }
+        }
+        this.lastDest = destination;
         const movement = direct || (destination ? this.nav.steer(destination, arrive, now, contact) : null);
         const weapon = this.weapon(now);
         this.sicChildren(now, weapon);

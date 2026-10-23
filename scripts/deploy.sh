@@ -9,6 +9,8 @@ else APP_DIR="$HOME/digwars"; fi
 APP_NAME="${PM2_APP:-$(basename "$APP_DIR")}"
 
 cd "$APP_DIR"
+GENERATED=(public/tanks/tanks.json public/tanks/atlas-s.webp public/tanks/atlas-l.webp scripts/tanks/atlas.map.json public/client/account/preview-mockups.json)
+git checkout -- "${GENERATED[@]}"
 git pull --ff-only origin dig-wars
 # --include=dev: the client build needs javascript-obfuscator even when the
 # shell has NODE_ENV=production. A failed build stops the script here and

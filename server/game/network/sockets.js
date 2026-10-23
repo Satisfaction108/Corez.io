@@ -1431,6 +1431,19 @@ class socketManager {
                     else if (what === "titan" && b) require('../terrain/teamMode.js').launchTitan(m[2] ? (m[2] | 0) === 2 ? -2 : -1 : b.team, String(m[1] || 'middle'), b);
                     else if (what === "titanto" && b) { const ti = require('../terrain/titan.js').aliveFor(b.team); if (ti && ti.titanPath) { const p = ti.titanPath[ti.titanPath.length - 1]; ti.x = p.x; ti.y = p.y; ti.titanWp = ti.titanPath.length - 1; b.x = p.x - (b.team === -1 ? 700 : -700); b.y = p.y + 400; } }
                     else if (what === "titanhp") { const ti = require('../terrain/titan.js').aliveFor(m[1] === 2 ? -2 : -1); if (ti) ti.health.amount = Math.max(1, ti.health.max * Math.max(0.001, Math.min(1, +m[2] || 0.01))); }
+                    else if (what === "bots") socket.talk('KC', 'dbg', JSON.stringify({ bots: [...entities.values()].filter(e => e && e.isBot && e.type === 'tank' && !e.isDead()).map(e => {
+                        const brain = (e.controllers || []).find(c => c && c.constructor && c.constructor.name === 'io_digWarsGoals');
+                        const g = brain && brain.goal, cg = e.control && e.control.goal;
+                        return { id: e.id, name: e.name, team: e.team, x: Math.round(e.x), y: Math.round(e.y), sp: Math.round(Math.hypot(e.velocity.x, e.velocity.y) * 10) / 10,
+                            kind: g ? g.kind : null, gx: g && g.x != null ? Math.round(g.x) : null, gy: g && g.y != null ? Math.round(g.y) : null,
+                            cx: cg ? Math.round(cg.x - e.x) : null, cy: cg ? Math.round(cg.y - e.y) : null, pw: e.control ? e.control.power : null,
+                            fr: !!e.royaleFrozen, lb: !!e.royaleLobby, ord: brain && brain._order ? brain._order.kind || brain._order.type || null : null,
+                            dx: brain && brain.lastDest ? Math.round(brain.lastDest.x - e.x) : null, dy: brain && brain.lastDest ? Math.round(brain.lastDest.y - e.y) : null,
+                            hd: brain && brain.nav ? Math.round(brain.nav.heading * 100) / 100 : null, esc: brain && brain.nav ? brain.nav.escapeUntil > Date.now() : null,
+                            un: e._unstickCount | 0, arr: brain && brain.nav ? brain.nav.arrived : null, sz: Math.round(e.size),
+                            st: brain && brain.progress ? [Date.now() - brain.progress.at, brain.moveRef ? Date.now() - brain.moveRef.at : -1, brain.progress.stalls, brain.progress.goal === g ? 1 : 0] : null,
+                            dt: !!(brain && brain.detour && brain.detour.until > Date.now()), dg: !!(brain && brain.dig && brain.dig.until > Date.now()) };
+                    }) }), 0);
                     else if (what === "teaminfo") socket.talk('KC', 'dbg', JSON.stringify({ teaminfo: require('../terrain/teamMode.js').debugInfo(b) }), 0);
                     else if (what === "contract" && b) socket.talk('KC', 'chest', String(require('../terrain/contracts.js').debugForce(b, String(m[1] || 'mine'))), 0);
                     else if (what === "supply" || what === "bounty") require('../terrain/pacing.js').debugFire(what);

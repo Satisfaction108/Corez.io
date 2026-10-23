@@ -37,6 +37,26 @@ for (const t of [...D.tanks].sort((a, b) => a.tier - b.tier)) {
     for (const g of front) g.PROPERTIES.ALT_FIRE = true;
 }
 
+const SHOT_FLOOR = { bullet: 4, drone: 5, trap: 5 };
+function shotKind(pr) {
+    const calc = pr.STAT_CALCULATOR || '', type = JSON.stringify(pr.TYPE || '');
+    if (calc === 'swarm' || /swarm|minion/i.test(type)) return null;
+    if (calc === 'drone' || calc === 'necro' || /drone/i.test(type)) return 'drone';
+    if (calc === 'trap' || calc === 'block' || /trap|block/i.test(type)) return 'trap';
+    return 'bullet';
+}
+for (const t of D.tanks) {
+    const def = Class[t.key];
+    for (const g of arr(def && def.GUNS)) {
+        const pr = g && g.PROPERTIES, ss = pr && pr.SHOOT_SETTINGS, pos = g && g.POSITION;
+        if (!ss || !pos || !(ss.size >= 0.05)) continue;
+        const width = Array.isArray(pos) ? pos[1] : pos.WIDTH;
+        const floor = SHOT_FLOOR[shotKind(pr)];
+        if (!floor || !(width > 0) || width * ss.size >= floor) continue;
+        pr.SHOOT_SETTINGS = { ...ss, size: floor / width };
+    }
+}
+
 // 2. balance: every damage number of a new tank times s
 let made = 0;
 const armed = def => arr(get(def, 'GUNS')).some(g => g.PROPERTIES && g.PROPERTIES.SHOOT_SETTINGS) || arr(get(def, 'TURRETS')).some(t => armed(resolve(t.TYPE)));
