@@ -75,11 +75,7 @@ function healthMult(g) { return 1 + HEALTH_PER_X * (Math.min(maxGrowth(), Math.m
 const DAMAGE_PER_X = 0.12;
 function damageMult(g) { return 1 + DAMAGE_PER_X * (Math.min(maxGrowth(), Math.max(1, g)) - 1); }
 function bodyDamageMult(g) { return damageMult(g); }
-// The camera: arras' own sqrt(size) times this, so the view follows
-// g^VIEW_POW with no ceiling (the map edge is the limit).
-// 0.45: the camera opens up, but slower than the tank grows, so growing
-// shows on screen (at 0.7 a 2.3x tank only looked ~1.3x bigger)
-const VIEW_POW = 0.45;
+const VIEW_POW = 1;
 function viewMult(g) { return Math.pow(Math.max(1, g), VIEW_POW); }
 function fovMult(g) { return viewMult(g) / Math.sqrt(Math.max(1, g)); }
 // Rock: every hit digs damageMult harder, and the per-second dig budget

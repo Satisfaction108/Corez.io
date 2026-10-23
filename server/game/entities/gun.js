@@ -5,6 +5,8 @@ let EventEmitter = require('events'),
     init = g => events = g.events;
 const MINING_RECOIL = (() => { const v = parseFloat(process.env.ROYALE_MINING_RECOIL); return Number.isFinite(v) && v >= 0 ? Math.min(1, v) : 0.4; })();
 const MINING_RECOIL_MS = 450;
+const TANK_KID_CAP = 8;
+const TANK_NECRO_CAP = 14;
 class Gun extends EventEmitter {
     constructor(body, info) {
         super();
@@ -309,10 +311,10 @@ class Gun extends EventEmitter {
     checkShootPermission() {
         let sk = this.bulletStats === "master" ? this.body.skill : this.bulletStats;
         let shootPermission = this.countsOwnKids
-            ? this.countsOwnKids >
+            ? this.ownKidCap() >
                 this.children.length * (this.calculator == "necro" ? sk.rld : 1)
             : this.body.maxChildren
-            ? this.body.maxChildren >
+            ? this.bodyKidCap() >
                 this.body.children.length * (this.calculator == "necro" ? sk.rld : 1)
             : true;
 
@@ -323,6 +325,21 @@ class Gun extends EventEmitter {
         }
 
         return shootPermission;
+    }
+    tankKidCap() {
+        const m = this.body.master;
+        if (!m || !(m.isPlayer || m.isBot)) return Infinity;
+        return this.calculator == "necro" ? TANK_NECRO_CAP : TANK_KID_CAP;
+    }
+    ownKidCap() {
+        const cap = this.tankKidCap();
+        if (cap === Infinity) return this.countsOwnKids;
+        let spawners = 0;
+        for (const gun of this.body.guns.values()) if (gun.countsOwnKids) spawners++;
+        return Math.min(this.countsOwnKids, Math.max(1, Math.floor(cap / Math.max(1, spawners))));
+    }
+    bodyKidCap() {
+        return Math.min(this.body.maxChildren, this.tankKidCap());
     }
     destroyOldest() {
         let oldestChild,
