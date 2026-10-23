@@ -159,12 +159,12 @@ test('perks', () => {
         prev = h;
     }
     const view = g => Math.sqrt(g) * growth.fovMult(g);
-    assert.equal(growth.VIEW_POW, 1);
+    assert.equal(growth.VIEW_POW, 0.8);
     for (const g of [1.5, 2, 2.3, 3, 4, 6, 8, 12, 20]) {
-        assert.ok(Math.abs(view(g) - g) < 1e-9, 'the view grows with the tank at ' + g);
+        assert.ok(Math.abs(view(g) - Math.pow(g, 0.8)) < 1e-9, 'the view grows with the tank at ' + g);
     }
     const fov = (base, g) => 275 * Math.sqrt(base * g) * growth.fovMult(g);
-    assert.ok(Math.abs(fov(12, 8) / fov(12, 1) - 8) < 1e-9);
+    assert.ok(Math.abs(fov(12, 8) / fov(12, 1) - Math.pow(8, 0.8)) < 1e-9);
     const n = fakeBody();
     growth.applyPerks(n);
     assert.equal(n.topSpeed, 1);

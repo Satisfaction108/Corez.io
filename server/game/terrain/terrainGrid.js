@@ -22,6 +22,14 @@ const ROCK_BREAKS_PER_SEC = 6;
 // Mirrored on the client: terrainRenderer.js GROW_MS / GROW_SCALE0.
 const GROW_TIMELINE_MS = 16_000;
 const RISE_MS = 5_000;
+let _drillShop = null;
+function drillRegrowBoost(owner) {
+    if (!owner || !owner.socket) return 1;
+    try {
+        _drillShop ||= require('./shop.js');
+        return 1 + _drillShop.drillTier(owner) / 5;
+    } catch { return 1; }
+}
 const REGROW = {
     BASE_DELAY_MS:      42_000,
     MIN_DELAY_MS:       22_000,
@@ -1287,7 +1295,7 @@ class TerrainGrid {
                     const bl = this._bloomNow || null;
                     if (bl && ((rock.wx - bl.x) ** 2 + (rock.wy - bl.y) ** 2) <= bl.r * bl.r) bloomRock = true;
                 }
-                if (now - rock.diedAt < (bloomRock ? REGROW.BLOOM_DELAY_MS : delay)) continue;
+                if (now - rock.diedAt < (bloomRock ? REGROW.BLOOM_DELAY_MS : delay) / (rock.regrowBoost || 1)) continue;
                 if (rock.noRegrowUntil && now < rock.noRegrowUntil) continue;
                 if (this._inNoRegrowZone(rock, now)) continue;
                 if (!bloomRock && !this._hasLivingNeighbour(rock)) {
@@ -1579,6 +1587,7 @@ class TerrainGrid {
             if (wasGrowing) { rock.growing = false; rock._cp = null; this._unlistGrowing(rock); }
             rock.growDamage = 0;
             rock.diedAt = Date.now();
+            rock.regrowBoost = drillRegrowBoost(owner);
 
             if (!wasGrowing && rock.ore === ORE.EMERALD && this._pendingEmeralds.length < REGROW.EMERALD_PENDING_MAX)
                 this._pendingEmeralds.push({ at: rock.diedAt + ((global.royaleMods && global.royaleMods.emeraldRespawnMs) || REGROW.EMERALD_RESPAWN_MS) });

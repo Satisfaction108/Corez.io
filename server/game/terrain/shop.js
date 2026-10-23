@@ -9,7 +9,7 @@ const BULWARK = { r: 420, gap: 70, rate: 5, max: 36 };
 const STATPT_MAX = 10;
 const PAD_RADIUS = 95;
 
-const DRILL_MULT = [1, 1.25, 1.5, 1.8, 2.15, 2.6];
+const DRILL_MULT = [1, 1.12, 1.24, 1.36, 1.5, 1.65];
 // Satchel caps (owner, Oct 5 2026): 8,000
 const SATCHEL_BASE = 8000;
 const SATCHEL_STEP = 4000;
@@ -19,11 +19,11 @@ const SATCHEL_STEP = 4000;
 // already has them (old saves, twists, the tutorial). `fresh`: only sold
 // with the ability system on.
 const ITEMS = [
-    { id: "drill1", cat: "drill", tier: 1, name: "Drill I",   price: 400,  desc: "You mine 25% faster." },
-    { id: "drill2", cat: "drill", tier: 2, name: "Drill II",  price: 900,  desc: "You mine 50% faster." },
-    { id: "drill3", cat: "drill", tier: 3, name: "Drill III", price: 1600, desc: "You mine 80% faster." },
-    { id: "drill4", cat: "drill", tier: 4, name: "Drill IV",  price: 2600, desc: "You mine 115% faster." },
-    { id: "drill5", cat: "drill", tier: 5, name: "Drill V",   price: 4000, desc: "You mine 160% faster, and you dig at full speed right after you respawn." },
+    { id: "drill1", cat: "drill", tier: 1, name: "Drill I",   price: 500,   desc: "You mine 12% faster." },
+    { id: "drill2", cat: "drill", tier: 2, name: "Drill II",  price: 1500,  desc: "You mine 24% faster." },
+    { id: "drill3", cat: "drill", tier: 3, name: "Drill III", price: 3500,  desc: "You mine 36% faster." },
+    { id: "drill4", cat: "drill", tier: 4, name: "Drill IV",  price: 7500,  desc: "You mine 50% faster." },
+    { id: "drill5", cat: "drill", tier: 5, name: "Drill V",   price: 15000, desc: "You mine 65% faster, and you dig at full speed right after you respawn." },
     // gear: timed (GEAR_MS); `on` is the message shown when it starts
     { id: "statpt",    cat: "gear", name: "Stat Point",         price: 1000, desc: "Gives you one extra stat point that you keep after dying. You can buy up to 10 per raid.", aoDesc: "Gives you one extra stat point that you keep after dying. You can buy up to 10." },
     { id: "scanner",   cat: "gear", name: "Ore Scanner",        price: 1000, desc: "Shows shard and emerald veins within 1.5km on your minimap for 5 minutes.", on: "Veins near you now show on your minimap." },
@@ -194,6 +194,10 @@ function bankedOf(socket) { return (socket && socket.gemBanked) | 0; }
 // ── effect queries (players only; bots get 1x) ──────────────────────────
 function shopOf(body) { return body && body.socket ? stateOf(body.socket) : null; }
 
+function drillTier(body) {
+    const s = shopOf(body);
+    return s ? Math.max(0, Math.min(5, s.drill | 0)) : 0;
+}
 function miningMult(body) {
     const s = shopOf(body);
     if (!s) return 1;
@@ -934,7 +938,7 @@ function tick(actors) {
 
 module.exports = {
     ITEMS, BY_ID, getShops, snapshot, catalog, stateOf, freshState, resetAll, talkState, dropKit,
-    miningMult, hasGear, magnetMult, satchelCap, deepPockets, SATCHEL_BASE, SATCHEL_STEP, depositRateMult, stormDamageMult, spawnMoveShieldMs, WIND_SHIELD_MS, killBonus,
+    miningMult, drillTier, hasGear, magnetMult, satchelCap, deepPockets, SATCHEL_BASE, SATCHEL_STEP, depositRateMult, stormDamageMult, spawnMoveShieldMs, WIND_SHIELD_MS, killBonus,
     BULWARK, bulwarkRaise, STATPT_MAX, keepsDrillOnRespawn, applyPassives, armOf, attachSidearm, detachSidearm, buy, grantKit, grantArm, randomKitId, useKit, swapKit, onDeath, tick,
     KIT_SLOTS, kitCount, kitFreeSlot,
     PAD_RADIUS, DRILL_MULT, insideHexagon, HEX_SCALE, launchBarrage, BARRAGE, STRUT_RADIUS, gearActive, GEAR_MAX,

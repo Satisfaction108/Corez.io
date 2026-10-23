@@ -224,6 +224,13 @@ function tanks() {
     if (Config.dig_royale) { try { const boss = require('./bosses.js').current(); if (boss) out.push(boss); } catch { /* */ } }
     return out;
 }
+function titansNow() {
+    if (!Config.royale_teams) return [];
+    try {
+        const titan = require('./titan.js');
+        return [-1, -2].map(team => titan.aliveFor(team)).filter(o => live(o));
+    } catch { return []; }
+}
 function hostile(a, b) { return a !== b && a.team !== b.team; }
 function shielded(b) { return !!(b.invuln || b.godmode || b.passive || b.padSafe || b.royaleLobby); }
 function radiusOf(b) { return b.realSize || b.size || 30; }
@@ -511,7 +518,7 @@ const USES = {
         const g = tg();
         const dir = aimAt(body, tx, ty);
         const r = radiusOf(body);
-        const others = tanks().filter(o => o !== body && Math.hypot(o.x - body.x, o.y - body.y) < GRAPPLE.range + radiusOf(o) + r);
+        const others = tanks().concat(titansNow()).filter(o => o !== body && Math.hypot(o.x - body.x, o.y - body.y) < GRAPPLE.range + radiusOf(o) + r);
         let hit = null, hx = body.x + dir.x * (r + GRAPPLE.range), hy = body.y + dir.y * (r + GRAPPLE.range);
         for (let s = r + 6; s <= r + GRAPPLE.range; s += GRAPPLE.step) {
             const x = body.x + dir.x * s, y = body.y + dir.y * s;

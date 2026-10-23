@@ -20,8 +20,8 @@ const BLUE_SITES = {
 };
 const NEUTRAL_SHOPS = [{ x: -760, y: 1470 }, { x: 760, y: -1470 }];
 const CENTER = { x: 0, y: 0 };
-const DRONE_R = 560;
-const BLUE_PROTECTORS = [{ x: -3570, y: -560 }, { x: -3570, y: 560 }];
+const DRONE_R = 760;
+const BLUE_PROTECTORS = [{ x: -3150, y: -630 }, { x: -3150, y: 630 }];
 const YARD_R = 640;
 const PAD_R = 95;
 
@@ -108,7 +108,7 @@ function baseSpawnSpot(team, rng = Math.random) {
         const y = r.y0 + 120 + rng() * (r.y1 - r.y0 - 240);
         if (Math.hypot(x - bank.x, y - bank.y) < PAD_R * 1.6 + 70) continue;
         let nearProt = false;
-        for (const p of protectorSpots(team)) if (Math.hypot(x - p.x, y - p.y) < 150) { nearProt = true; break; }
+        for (const p of protectorSpots(team)) if (Math.hypot(x - p.x, y - p.y) < 240) { nearProt = true; break; }
         if (nearProt) continue;
         return { x, y };
     }

@@ -37,7 +37,7 @@ for (const t of [...D.tanks].sort((a, b) => a.tier - b.tier)) {
     for (const g of front) g.PROPERTIES.ALT_FIRE = true;
 }
 
-const SHOT_FLOOR = { bullet: 4, drone: 5, trap: 5 };
+const SHOT_FLOOR = { bullet: 4, drone: 6, trap: 5 };
 function shotKind(pr) {
     const calc = pr.STAT_CALCULATOR || '', type = JSON.stringify(pr.TYPE || '');
     if (calc === 'swarm' || /swarm|minion/i.test(type)) return null;
@@ -55,6 +55,19 @@ for (const t of D.tanks) {
         if (!floor || !(width > 0) || width * ss.size >= floor) continue;
         pr.SHOOT_SETTINGS = { ...ss, size: floor / width };
     }
+}
+
+const DRONE_RATE_CAP = 4 / 45;
+for (const t of D.tanks) {
+    const def = Class[t.key];
+    const spawners = arr(def && def.GUNS).filter(g => {
+        const pr = g && g.PROPERTIES, ss = pr && pr.SHOOT_SETTINGS;
+        return ss && ss.reload > 0 && shotKind(pr) === 'drone' && (pr.STAT_CALCULATOR === 'drone' || pr.STAT_CALCULATOR === 'necro');
+    });
+    const rate = spawners.reduce((sum, g) => sum + 1 / g.PROPERTIES.SHOOT_SETTINGS.reload, 0);
+    if (!(rate > DRONE_RATE_CAP)) continue;
+    const slow = rate / DRONE_RATE_CAP;
+    for (const g of spawners) g.PROPERTIES.SHOOT_SETTINGS = { ...g.PROPERTIES.SHOOT_SETTINGS, reload: g.PROPERTIES.SHOOT_SETTINGS.reload * slow };
 }
 
 // 2. balance: every damage number of a new tank times s

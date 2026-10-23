@@ -339,16 +339,16 @@ Class.royaleTitanRed = titanClass("red");
 
 Class.royaleBaseSwarmTurret = makeTurret({
     GUNS: [
-        { POSITION: [5, 4.5, 0.6, 7, 2, 0, 0], PROPERTIES: { SHOOT_SETTINGS: combineStats([g.swarm, g.baseProtector, { speed: 0.5, range: 0.5 }]), TYPE: "baseSwarmTurret_swarm", STAT_CALCULATOR: "swarm" } },
-        { POSITION: [5, 4.5, 0.6, 7, -2, 0, 0], PROPERTIES: { SHOOT_SETTINGS: combineStats([g.swarm, g.baseProtector, { speed: 0.5, range: 0.5 }]), TYPE: "baseSwarmTurret_swarm", STAT_CALCULATOR: "swarm" } },
-        { POSITION: [5, 4.5, 0.6, 7.5, 0, 0, 0.75], PROPERTIES: { SHOOT_SETTINGS: combineStats([g.swarm, g.baseProtector, { speed: 0.4, range: 0.5 }]), TYPE: "baseSwarmTurret_swarm" } },
+        { POSITION: [5, 4.5, 0.6, 7, 2, 0, 0], PROPERTIES: { SHOOT_SETTINGS: combineStats([g.swarm, g.baseProtector, { speed: 0.5, range: 0.85 }]), TYPE: "baseSwarmTurret_swarm", STAT_CALCULATOR: "swarm" } },
+        { POSITION: [5, 4.5, 0.6, 7, -2, 0, 0], PROPERTIES: { SHOOT_SETTINGS: combineStats([g.swarm, g.baseProtector, { speed: 0.5, range: 0.85 }]), TYPE: "baseSwarmTurret_swarm", STAT_CALCULATOR: "swarm" } },
+        { POSITION: [5, 4.5, 0.6, 7.5, 0, 0, 0.75], PROPERTIES: { SHOOT_SETTINGS: combineStats([g.swarm, g.baseProtector, { speed: 0.4, range: 0.85 }]), TYPE: "baseSwarmTurret_swarm" } },
     ],
-}, { label: "Protector", independent: true, fov: 0.42, aiSettings: { NO_LEAD: true, CHASE: true, IGNORE_SHAPES: true } });
+}, { label: "Protector", independent: true, fov: 0.62, aiSettings: { NO_LEAD: true, CHASE: true, IGNORE_SHAPES: true } });
 
 Class.royaleBaseProtector = {
     PARENT: "baseProtector",
     LABEL: "Base",
-    SIZE: 56,
+    SIZE: 88,
     TURRETS: [
         { POSITION: [25, 0, 0, 0, 360, 0], TYPE: "dominationBody" },
         ...weaponArray({ POSITION: [12, 7, 0, 45, 100, 0], TYPE: "royaleBaseSwarmTurret" }, 4),

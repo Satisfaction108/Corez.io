@@ -2740,7 +2740,7 @@ import './cinematic.js';
             return side;
         };
         // one options object for every skinned hull, refilled per draw
-        const skinOpts = { statusColor: null, blend: 0, flash: false, flashColor: null, hitBlend: 0, hitColor: null, borderless: false, fill: true, lowFx: false, force: false };
+        const skinOpts = { statusColor: null, blend: 0, flash: false, flashColor: null, hitBlend: 0, hitColor: null, borderless: false, fill: true, lowFx: false, force: false, anchor: null };
         let rootStroke = 1;
 
         return (baseColor, x, y, instance, ratio, alpha = 1, scale = 1, lineWidthMult = 1, rot = 0, turretsObeyRot = false, assignedContext = false, turretInfo = false, render = instance.render, smoothsize = false) => {
@@ -3007,8 +3007,20 @@ import './cinematic.js';
                             so.statusColor = statusColor; so.blend = blend; so.flash = invulnBlink; so.flashColor = gameDraw.getColor(6);
                             so.hitBlend = hitBlend; so.hitColor = hitTint; so.borderless = m.borderless; so.fill = m.drawFill;
                             so.lowFx = !!(global.lowFx || config.graphical.optimizeMode); so.force = !!instance.skinForce;
+                            so.anchor = null;
                             cosmetics.paintHull(context, xx, yy, sizeRatio, m.shape, rot, instance.skin, bodyBase, so);
-                        } catch (e) { /* a skin never breaks the frame */ }
+                        } catch (e) { }
+                    } else if (turretInfo && turretInfo.skinAnchor) {
+                        const A = turretInfo.skinAnchor;
+                        try {
+                            const so = skinOpts;
+                            so.statusColor = statusColor; so.blend = blend; so.flash = invulnBlink; so.flashColor = gameDraw.getColor(6);
+                            so.hitBlend = hitBlend; so.hitColor = hitTint; so.borderless = m.borderless; so.fill = m.drawFill;
+                            so.lowFx = !!(global.lowFx || config.graphical.optimizeMode); so.force = A.force;
+                            so.anchor = A;
+                            cosmetics.paintHull(context, xx, yy, sizeRatio, m.shape, rot, A.skin, A.base, so);
+                        } catch (e) { }
+                        skinOpts.anchor = null;
                     }
                 }
             }
@@ -3024,6 +3036,15 @@ import './cinematic.js';
                 }
                 t.invuln = instance.invuln;
                 if (t.layer) {
+                    t.skinAnchor = null;
+                    if (turretInfo === false && instance.skin && !t.isImage) {
+                        let base = gameDraw.modifyColor(instance.color, baseColor);
+                        if (base === themeGrey) base = gameDraw.TANK_GUN;
+                        else if (base === themeBlack) base = gameDraw.TANK_SPIKE;
+                        const sa = t._skinAnchor || (t._skinAnchor = {});
+                        sa.x = xx; sa.y = yy; sa.r = sizeRatio; sa.rot = rot; sa.skin = instance.skin; sa.base = base; sa.force = !!instance.skinForce;
+                        t.skinAnchor = sa;
+                    }
                     const ang = t.direction + t.angle + rot;
                     const len = t.offset * drawSize;
                     const facing = t.forceAngle === null || t.forceAngle === undefined ? (t.mirrorMasterAngle || turretsObeyRot) ? rot + t.angle : t.lerpedFacing : t.angle;

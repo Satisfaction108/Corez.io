@@ -780,11 +780,11 @@ const PAINT = {
         const arms = [];
         for (let i = 0; i < 6; i++) {
             const a = (i / 6) * TAU, cs = Math.cos(a), sn = Math.sin(a), q = (u, v) => [u * cs - v * sn, u * sn + v * cs];
-            arms.push([[q(0.2, 0), q(0.9, 0)], 0.13], [[q(0.44, 0), q(0.62, 0.2)], 0.1], [[q(0.44, 0), q(0.62, -0.2)], 0.1], [[q(0.66, 0), q(0.8, 0.14)], 0.08], [[q(0.66, 0), q(0.8, -0.14)], 0.08]);
+            arms.push([[q(0.2, 0), q(0.8, 0)], 0.12], [[q(0.42, 0), q(0.58, 0.18)], 0.09], [[q(0.42, 0), q(0.58, -0.18)], 0.09], [[q(0.6, 0), q(0.72, 0.12)], 0.07], [[q(0.6, 0), q(0.72, -0.12)], 0.07]);
         }
-        bands(c, arms, P.a.f, P.a.k);
-        hexagon(c, 0, 0, 0.28, 0); fl(c, P.b);
-        hexagon(c, 0, 0, 0.12, 0); paint(c, P.a.f, null);
+        bands(c, arms, P.b.f, P.a.k);
+        hexagon(c, 0, 0, 0.26, 0); paint(c, P.a.f, P.a.k);
+        hexagon(c, 0, 0, 0.11, 0); paint(c, P.b.f, null);
     },
     drill(c, P) {
         for (let i = 0; i < 3; i++) { flute(c, (i / 3) * TAU); fl(c, P.a); }
@@ -1056,7 +1056,9 @@ export function paintHull(c, x, y, r, shape, rot, nid, baseHex, o) {
     const it = skinOf(nid);
     if (!it || !o || o.fill === false || !skinnable(shape)) return;
     const T = c.getTransform();
-    const dev = r * (Math.hypot(T.a, T.b) || 1);
+    const A = o.anchor || null;
+    const tileR = A ? A.r : r;
+    const dev = tileR * (Math.hypot(T.a, T.b) || 1);
     if (dev < 5) return;
     const team = typeof baseHex === 'string' && /^#[0-9a-f]{6}$/i.test(baseHex) ? baseHex : '#808080';
     const still = !!o.lowFx || fewerFx();
@@ -1065,12 +1067,12 @@ export function paintHull(c, x, y, r, shape, rot, nid, baseHex, o) {
     const s = it.skin, em = s.emissive;
     const t = still ? 0 : (o.time != null ? o.time : performance.now() / 1000);
     const a0 = c.globalAlpha;
-    const R = r * E;
+    const R = tileR * E;
     c.save();
     hullPath(c, x, y, r, shape, rot, 'clip');
     c.setTransform(T);
-    c.translate(x, y);
-    c.rotate(rot);
+    c.translate(A ? A.x : x, A ? A.y : y);
+    c.rotate(A ? A.rot : rot);
     c.globalAlpha = a0 * (s.opacity == null ? 1 : s.opacity);
     if (em && t) {
         let turn = em.spin || 0;
@@ -1115,12 +1117,12 @@ export function paintHull(c, x, y, r, shape, rot, nid, baseHex, o) {
     if (fk > 0) {
         c.globalAlpha = a0 * Math.min(1, fk);
         c.fillStyle = o.flash ? o.flashColor : o.statusColor;
-        c.fillRect(x - R, y - R, 2 * R, 2 * R);
+        c.fillRect(x - R - r, y - R - r, 2 * (R + r), 2 * (R + r));
     }
     if (o.hitBlend > 0) {
         c.globalAlpha = a0 * Math.min(1, o.hitBlend);
         c.fillStyle = o.hitColor;
-        c.fillRect(x - R, y - R, 2 * R, 2 * R);
+        c.fillRect(x - R - r, y - R - r, 2 * (R + r), 2 * (R + r));
     }
     c.restore();
     // the pattern covered the inner half of a centred rim: draw it again

@@ -2,13 +2,8 @@
 // The engine's own Config.growth path ties size to level and hands out skill
 // points past 45, so this keeps its own multiplier on the body (growthMult)
 // and entity.js folds it into sizeMultiplier and the stats below.
-//
-// Score is the raid board score (scoreOf), so kills, banking, bosses, chests
-// and quests all feed it. A respawn comes back at the size a quarter of the
-// score earns, never above RESPAWN_CAP, and grows on from there with every
-// point earned in the new life.
 
-const RESPAWN_SHARE = 0.25;
+const RESPAWN_SHARE = 1;
 const RESPAWN_CAP = 1.45;
 const GAIN = 0.36;
 const SCALE = 1500;          // 1.45x at ~3.7k score, smooth tail to 1.85x
@@ -57,9 +52,8 @@ function scoreMult(body) { return body && body.isBot && !body.botMinnow ? BOT_SC
 // body.growthCap (a small fish): never past it
 function capped(body, g) { return body && body.growthCap > 0 ? Math.min(g, body.growthCap) : g; }
 
-// What a fresh life starts growing from: a quarter of the raid score, capped.
 function spawnEff(score) {
-    return Math.min(Math.max(0, score || 0) * RESPAWN_SHARE, CAP_SCORE);
+    return Math.max(0, score || 0) * RESPAWN_SHARE;
 }
 
 // Trade-offs, all 1 at normal size.
@@ -75,7 +69,7 @@ function healthMult(g) { return 1 + HEALTH_PER_X * (Math.min(maxGrowth(), Math.m
 const DAMAGE_PER_X = 0.12;
 function damageMult(g) { return 1 + DAMAGE_PER_X * (Math.min(maxGrowth(), Math.max(1, g)) - 1); }
 function bodyDamageMult(g) { return damageMult(g); }
-const VIEW_POW = 1;
+const VIEW_POW = 0.8;
 function viewMult(g) { return Math.pow(Math.max(1, g), VIEW_POW); }
 function fovMult(g) { return viewMult(g) / Math.sqrt(Math.max(1, g)); }
 // Rock: every hit digs damageMult harder, and the per-second dig budget
@@ -154,11 +148,11 @@ function tick(t, bodies, scoreFor, onStage, onRefit) {
     const k = Math.min(1, dt / EASE_MS);
     for (const body of bodies) {
         if (!body || body.isDead?.()) continue;
-        let score = scoreFor(body);
-        if (score == null) continue;
-        score *= scoreMult(body) * growRate();
+        const raw = scoreFor(body);
+        if (raw == null) continue;
+        const score = raw * scoreMult(body) * growRate();
         if (body._growEff == null) {
-            onSpawn(body, score);
+            onSpawn(body, raw);
             if (onRefit && body.growthMult > 1.15) { try { onRefit(body, true); } catch { /* */ } }
             continue;
         }

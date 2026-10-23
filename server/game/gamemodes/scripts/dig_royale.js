@@ -3370,8 +3370,7 @@ function onHumanJoin(body) {
         guard('contracts spawn', () => contracts.onSpawn(body));
         if (resuming) body.socket._dropCue = false;
         if (isRespawn && (body.growthMult || 1) >= 1.1) {
-            const capped = growthScore(body) * growth.RESPAWN_SHARE > growth.CAP_SCORE + 1;
-            try { body.sendMessage("You came back at " + fmtGrow(Math.round(body.growthMult * 10) / 10) + " size" + (capped ? ", which is the most a respawn gives you." : ", based on a quarter of your score.")); } catch { /* */ }
+            try { body.sendMessage("You came back at " + fmtGrow(Math.round(body.growthMult * 10) / 10) + " size, based on your score."); } catch { }
         }
         if (bankIn > 0) {
             try { body.sendMessage("You brought " + bankIn.toLocaleString('en-US') + " gems to spend at shops."); } catch { /* */ }
@@ -3923,7 +3922,16 @@ function idleKick(socket, body) {
 function saveLeave(socket, body) {
     socket.leftOnPurpose = true;
     socket._drCleaned = true;
+    const savedKey = statKeyFor(body);
     try { disconnectCleanup(socket, body); } catch (e) { guardLog('save cleanup', e); }
+    const savedRow = savedKey && raidStats.get(savedKey);
+    if (savedRow) {
+        const left = scoreOf(savedRow);
+        if (left > 0) savedRow.deathCut = (savedRow.deathCut || 0) + left;
+        savedRow.restoredPts = 0;
+        savedRow.restoredBanked = 0;
+        savedRow._aoSig = '';
+    }
     if (body && !body.isDead?.()) {
         try { body.invuln = false; body.kill(); body.destroy(); } catch (e) { guardLog('save remove', e); }
     }
@@ -4857,8 +4865,7 @@ function onTier5(body) {
 function onGrown(body, stage, idx) {
     if (!body.socket) return;
     guard('ach grow', () => achHooks.onGrow(body, stage));
-    const sub = stage >= growth.RESPAWN_CAP && stage < 2.3 ? "When you respawn, you come back at a size based on a quarter of your score, up to " + fmtGrow(growth.RESPAWN_CAP) + "."
-        : "You hit harder and have more health and a wider view, but you're a little slower.";
+    const sub = "You hit harder and have more health and a wider view, but you're a little slower.";
     try { body.socket.talk('KC', "grown", "You grew to " + fmtGrow(stage), 0, sub); } catch { /* */ }
 }
 
