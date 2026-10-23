@@ -150,7 +150,7 @@ async function main() {
         TRUSTED_PROXIES: '127.0.0.1', SINGLE_PROCESS: 'true', PORT: String(port), BR_PORT: String(port),
         TUT_PORT: String(port + 1), DUO_PORT: String(port + 2), DW_PORT: String(port + 3) };
     delete env.NODE_ENV;
-    for (const k of Object.keys(env)) if (/^(DISCORD_|WEB_PUSH_|BACKUP_)/.test(k)) delete env[k];
+    for (const k of ['DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET', 'DISCORD_APP_ID', 'DISCORD_PUBLIC_KEY', 'DISCORD_BOT_TOKEN', 'DISCORD_ADMIN_GUILD_ID', 'ADMIN_DISCORD_IDS', 'DISCORD_ANNOUNCE_CHANNEL_ID', 'DISCORD_BACKUP_CHANNEL_ID', 'BACKUP_ENCRYPTION_KEY', 'WEB_PUSH_PUBLIC_KEY', 'WEB_PUSH_PRIVATE_KEY', 'WEB_PUSH_SUBJECT']) env[k] = '';
     const logFile = path.join(ROOT, 'server.log');
     const out = fs.openSync(logFile, 'w');
     let server = null, chrome = null, ws = null;
