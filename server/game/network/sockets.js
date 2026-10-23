@@ -200,6 +200,7 @@ class socketManager {
             JSON.stringify(require('../terrain/shop.js').snapshot()),
             // rock biome seed (shared/rockBiomes.js), 0 = plain rock
             tg.biomeSeed | 0,
+            tg.teamMode ? 1 : 0,
         ];
     }
     sendTerrain(socket, packet = this.terrainPacket()) {
@@ -571,6 +572,24 @@ class socketManager {
                     !require('../tutorialSession.js').allows(vBody, 'bank', vBody.outpostOnPad ? 'base' : 'vault')) return;
                 if (vBody && vBody.outpostOnPad) require('../terrain/outposts.js').requestDeposit(socket, m[0]);
                 else require('../terrain/vault.js').requestDeposit(socket, m[0]);
+            } break;
+            case 'TI': {
+                if (!Config.dig_royale) break;
+                const tmI = require('../terrain/teamMode.js');
+                const code = tmI.isActive() ? tmI.inviteCode(socket) : null;
+                socket.talk('TI', code || '');
+            } break;
+            case 'TJ': {
+                if (m.length !== 1 || typeof m[0] !== "string" || m[0].length > 16) break;
+                if (!Config.dig_royale) break;
+                const tmJ = require('../terrain/teamMode.js');
+                if (!tmJ.isActive()) break;
+                const res = tmJ.joinCode(socket, m[0]);
+                socket.talk('TJ', res.ok ? 1 : 0, res.ok ? "You're joining " + res.by + " on the " + (res.team === -1 ? "Blue" : "Red") + " team." : String(res.why || ""));
+            } break;
+            case 'tw': {
+                if (m.length !== 1 || typeof m[0] !== "number" || !isFinite(m[0])) { socket.kick("Weird team call."); return 1; }
+                if (Config.dig_royale) require('../terrain/teamMode.js').onPacket(socket, [m[0] | 0]);
             } break;
             case 'SPI': {
                 try { accountBridge.adminSpecInvis && accountBridge.adminSpecInvis(socket); } catch { /* */ }
@@ -1027,7 +1046,7 @@ class socketManager {
             case "EP": {
                 // raids have no enemy pings: solos is every tank for itself,
                 // and duos pings the partner through "PG"
-                if (Config.dig_royale) return;
+                if (Config.dig_royale && !Config.royale_teams) return;
                 if (m.length !== 2 || typeof m[0] !== "number" || typeof m[1] !== "number" ||
                     !isFinite(m[0]) || !isFinite(m[1])) {
                     return; 
@@ -1407,6 +1426,12 @@ class socketManager {
                     else if (what === "shop" && b) { const sh = require('../terrain/shop.js').getShops()[m[1] | 0]; if (sh) { b.x = sh.x; b.y = sh.y; b.velocity.x = 0; b.velocity.y = 0; } }
                     else if (what === "vault" && b) { const v = require('../terrain/vault.js').getVaults()[m[1] | 0]; if (v) { b.x = v.x; b.y = v.y; b.velocity.x = 0; b.velocity.y = 0; } }
                     else if (what === "boss") require('../terrain/bosses.js').spawn(m[1] ? String(m[1]) : undefined);
+                    else if (what === "teamwar" && b) { const tm = require('../terrain/teamMode.js'); tm.addWar(b.team, tm.warNeed(b.team) * Math.max(0.01, Math.min(1, +m[1] || 1))); }
+                    else if (what === "topad" && b) { const p = require('../terrain/teamMode.js').warPadOf(b.team); if (p) { b.x = p.x; b.y = p.y; b.velocity.x = 0; b.velocity.y = 0; } }
+                    else if (what === "titan" && b) require('../terrain/teamMode.js').launchTitan(m[2] ? (m[2] | 0) === 2 ? -2 : -1 : b.team, String(m[1] || 'middle'), b);
+                    else if (what === "titanto" && b) { const ti = require('../terrain/titan.js').aliveFor(b.team); if (ti && ti.titanPath) { const p = ti.titanPath[ti.titanPath.length - 1]; ti.x = p.x; ti.y = p.y; ti.titanWp = ti.titanPath.length - 1; b.x = p.x - (b.team === -1 ? 700 : -700); b.y = p.y + 400; } }
+                    else if (what === "titanhp") { const ti = require('../terrain/titan.js').aliveFor(m[1] === 2 ? -2 : -1); if (ti) ti.health.amount = Math.max(1, ti.health.max * Math.max(0.001, Math.min(1, +m[2] || 0.01))); }
+                    else if (what === "teaminfo") socket.talk('KC', 'dbg', JSON.stringify({ teaminfo: require('../terrain/teamMode.js').debugInfo(b) }), 0);
                     else if (what === "contract" && b) socket.talk('KC', 'chest', String(require('../terrain/contracts.js').debugForce(b, String(m[1] || 'mine'))), 0);
                     else if (what === "supply" || what === "bounty") require('../terrain/pacing.js').debugFire(what);
                     else if (what === "chests") socket.talk('KC', 'chest', JSON.stringify(require('../terrain/chests.js').debugInfo()), 0);
@@ -2254,7 +2279,11 @@ class socketManager {
                     try { kept = require('../gamemodes/scripts/dig_royale.js').resumeTeam(socket); } catch (e) { kept = null; }
                 }
                 // Duos: partners share one team (no friendly fire, one colour)
-                if (Config.royale_duos) {
+                const teamsLive = Config.dig_royale && require('../terrain/teamMode.js').isActive();
+                if (!teamsLive && kept && (kept.team === -1 || kept.team === -2)) kept = null;
+                if (teamsLive) {
+                    team = require('../terrain/teamMode.js').teamForHuman(socket, kept);
+                } else if (Config.royale_duos) {
                     try { team = require('../duo/duoRaid.js').teamForSpawn(socket, name); } catch (e) { console.error('[DUO] team pick failed', e && e.stack || e); }
                 } else if (Config.dig_royale) {
                     // Solo: a team id nobody else holds. A raw random id can land on
@@ -2264,7 +2293,9 @@ class socketManager {
                     else try { team = require('../duo/duoRaid.js').freshTeamId(); } catch (e) { console.error('[ROYALE] team pick failed', e && e.stack || e); }
                 }
                 body.team = team;
-                if (Config.dig_royale) {
+                if (teamsLive) {
+                    require('../terrain/teamMode.js').applyColor(body);
+                } else if (Config.dig_royale) {
                     // one palette colour per player, shared by hull, HUD, leaderboard and minimap
                     let rid = 0;
                     if (!Config.royale_duos) { try { rid = require('../gamemodes/scripts/dig_royale.js').raidIdNow(); } catch (e) { rid = 0; } }

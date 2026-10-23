@@ -14,7 +14,8 @@ body.mobile #touchChatBtn,
 body.mobile #touchRecBtn,
 body.mobile #touchAutoBtn,
 body.mobile #touchPingBtn,
-body.mobile #ingameFullscreenBtn {
+body.mobile #ingameFullscreenBtn,
+body.mobile #ingameInviteBtn {
     top: max(8px, env(safe-area-inset-top));
     width: 44px;
     height: 44px;

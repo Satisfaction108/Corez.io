@@ -190,7 +190,7 @@ function bumpMiningCombo(body, now = Date.now()) {
     return Math.min(COMBO_CAP, COMBO_STEP * ((body._comboN || 1) - 1));
 }
 
-function spawnOreBurst(rock, breaker) {
+function spawnOreBurst(rock, breaker, scale = 1) {
     if (!rock.ore) return;
     // what per-hit chips already paid comes off the break (chipHit)
     let owed = rock._chipPaid || 0;
@@ -205,6 +205,7 @@ function spawnOreBurst(rock, breaker) {
     for (const d of deposits) {
         let value = depositValue(rock, d, breaker);
         if (comboBonus > 0) value = Math.round(value * (1 + comboBonus));
+        if (scale < 1) value = Math.max(1, Math.round(value * scale));
         if (owed > 0) { const take = Math.min(owed, value); value -= take; owed -= take; }
         if (value <= 0) continue;
         const bigCls = rock.ore === ORE.EMERALD ? 'gemPickupEmeraldCore' : 'gemPickupShardCore';

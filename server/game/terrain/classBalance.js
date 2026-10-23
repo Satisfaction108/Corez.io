@@ -17,8 +17,11 @@ const VS_TANKS = {
     'Factory': 0.72, 'Flotilla': 0.72, 'Kumquat': 0.72, 'Pomelo': 0.72,
     'Big Cheese': 1.22,
 };
-// Traps hit like Arras traps while keeping pillbox/block spam fair.
-const TRAP_VS_TANKS = 0.96;
+// Oct 22 2026 (owner: trapper traps chunk ~1/3 of a tank's HP at 7/6/7
+// bullet stats): every trap and block lands 30% softer on other tanks.
+// Rock, chests and bosses take the same as before, so trap mining is
+// untouched and only tank-vs-tank damage drops.
+const TRAP_VS_TANKS = 0.70;
 // Minions (Spawner, Factory, etc.) have 6 basic-gun turrets; keep minion PvP
 // damage measured so 6 minions don't instagib or steamroll everything.
 const MINION_VS_TANKS = 0.72;

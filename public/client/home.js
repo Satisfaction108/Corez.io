@@ -447,6 +447,30 @@
             return null;
         }
         var liveRegions = {};
+        var regionModes = {};
+        function normMode(m) {
+            m = String(m || '').toLowerCase();
+            return m === '2tdm' ? '2tdm' : m === 'ffa' ? 'ffa' : '';
+        }
+        function fillModeBadge(el, mode) {
+            if (!el) return;
+            if (el.dataset.mode === mode) return;
+            el.dataset.mode = mode;
+            el.hidden = !mode;
+            el.className = 'mode-badge' + (mode ? ' mode-' + mode : '');
+            if (mode === '2tdm') {
+                el.title = 'Two teams: Blue against Red';
+                el.setAttribute('aria-label', '2TDM');
+                el.innerHTML = '<span class="mb-blue">2T</span><span class="mb-red">DM</span>';
+            } else if (mode === 'ffa') {
+                el.title = 'Free for all';
+                el.setAttribute('aria-label', 'FFA');
+                el.textContent = 'FFA';
+            } else {
+                el.title = '';
+                el.textContent = '';
+            }
+        }
         function updateRegionLabel() {
             if (!ddLabel) return;
             var selected = regionSelector ? regionSelector.querySelector('.region-option.selected') : null;
@@ -454,18 +478,22 @@
             var countEl = selected ? selected.querySelector('.region-count') : null;
             var count = countEl && countEl.style.display !== 'none' ? countEl.textContent.trim() : '';
             ddLabel.textContent = count ? name + ' \u2022 ' + count : name;
+            fillModeBadge(document.getElementById('serverModeBadge'), selected ? (regionModes[selected.dataset.region] || '') : '');
         }
 
         function renderRegionCounts(serverData) {
             var data = Array.isArray(serverData) ? serverData : [];
-            var counts = {}, labels = {};
+            var counts = {}, labels = {}, modes = {};
             data.forEach(function (s) {
                 var key = normRegion(s.region);
                 if (!key) return;
                 counts[key] = (counts[key] || 0) + (Number(s.players) || 0);
                 if (!labels[key]) labels[key] = String(s.region);
+                var md = normMode(s.royaleMode);
+                if (md && !modes[key]) modes[key] = md;
             });
             liveRegions = counts;
+            regionModes = modes;
             if (!regionSelector) return;
             var opts = regionSelector.querySelectorAll('.region-option');
             opts.forEach(function (opt) {
@@ -473,6 +501,13 @@
                 var nameEl = opt.querySelector('.region-name');
                 var key = opt.dataset.region;
                 if (nameEl && labels[key]) nameEl.textContent = key === 'USA' && /east/i.test(labels[key]) ? 'US East' : key;
+                var badgeEl = opt.querySelector('.mode-badge');
+                if (!badgeEl && modes[key]) {
+                    badgeEl = document.createElement('span');
+                    badgeEl.className = 'mode-badge';
+                    opt.insertBefore(badgeEl, countEl || null);
+                }
+                if (badgeEl) fillModeBadge(badgeEl, modes[key] || '');
                 if (!countEl) return;
                 if (counts[key] !== undefined) {
                     countEl.textContent = counts[key];

@@ -27,6 +27,7 @@ const SMASH_R = 170;
 // an epic chest is SIZE 40; the crate is 1.8x that. FOOT_R is the ground it
 // needs (chests.js holds the same radius against regrowth while it stands)
 const CRATE_SIZE = 72;
+const TEAM_WARN_MS = 6000;
 const FOOT_R = Math.round(CRATE_SIZE * 1.45);
 const FX_RANGE = 2600;
 // nobody stands where it lands: from the warning on, a tank inside the
@@ -109,6 +110,7 @@ function pickSpot(t, only = null) {
         if (Math.hypot(x, y) > mapR) return false;
         if (st && st.a && Math.hypot(x - st.cx, y - st.cy) > zoneR - g.edge) return false;
         if (pads.some(p => padGeom.insidePad(p, x, y, 260))) return false;
+        if (Config.royale_teams && require('./teamLayout.js').baseAt(x, y, 700)) return false;
         if (fighters.some(o => Math.hypot(o.x - x, o.y - y) < g.clear)) return false;
         // chests keep off the drop pits (a fresh spawn lands there)
         if (g.pit && grid && grid.spawnPits && grid.spawnPits.some(q => Math.hypot(q.x - x, q.y - y) < g.pit)) return false;
@@ -278,8 +280,43 @@ function land(t) {
     nextAt = t + GAP_MS[0] + Math.random() * (GAP_MS[1] - GAP_MS[0]);
 }
 
+const teamPlans = [];
+function teamDrop(team, spots, t = Date.now()) {
+    if (!enabled() || !Array.isArray(spots) || !spots.length) return false;
+    for (const s of spots) {
+        const p = { x: Math.round(s.x), y: Math.round(s.y), at: t + TEAM_WARN_MS, falling: false, team };
+        teamPlans.push(p);
+        talkAll(c => c.talk('FX', p.x, p.y, 'supplysoon', TEAM_WARN_MS, CRATE_SIZE, team === -1 ? 1 : 2));
+    }
+    return true;
+}
+function landTeam(p) {
+    smash(p.x, p.y);
+    shoveOff(p);
+    let o = null;
+    try { o = require('./chests.js').spawnChest(p.x, p.y, true, { gems: CRATE_GEMS, item: require('./shop.js').randomKitId(), exact: true, size: CRATE_SIZE }); } catch { o = null; }
+    if (!o) return;
+    o.supplyDrop = true;
+    o.isSupplyCrate = true;
+    o.crateTeam = p.team;
+    try { o.color.base = p.team === -1 ? 'blue' : 'red'; } catch { /* */ }
+    o.name = (p.team === -1 ? 'Blue' : 'Red') + ' Supply Crate';
+}
+function tickTeam(t) {
+    for (let i = teamPlans.length - 1; i >= 0; i--) {
+        const p = teamPlans[i];
+        clearSpot(p, t);
+        if (!p.falling && t >= p.at - FALL_MS) {
+            p.falling = true;
+            talkAll(c => c.talk('FX', p.x, p.y, 'supplyfall', FALL_MS, CRATE_SIZE, p.team === -1 ? 1 : 2));
+        }
+        if (t >= p.at) { teamPlans.splice(i, 1); landTeam(p); }
+    }
+}
+
 function tick(t) {
     if (!enabled() || (hooks.live && !hooks.live())) return;
+    if (teamPlans.length) tickTeam(t);
     if (crate && (!alive(crate) || crate._opened)) crate = null;
     const age = hooks.raidAge ? hooks.raidAge(t) : 0;
     if (!plan) {
@@ -313,7 +350,7 @@ function current(t = Date.now()) {
     return null;
 }
 
-function reset() { plan = null; crate = null; nextAt = 0; count = 0; }
+function reset() { plan = null; crate = null; nextAt = 0; count = 0; teamPlans.length = 0; }
 
 // The first-raid director (newcomerDirector.js): the next drop, now, close to
 // one player. It takes the place of the next timed one (the schedule runs on
@@ -332,4 +369,4 @@ function requestNear(body, t = Date.now(), reserveMs = 0) {
 // ROYALE_DEBUG (DBG supplydrop): the next one now
 function debugNow(t = Date.now()) { if (!plan) { nextAt = 0; warn(t); } return plan; }
 
-module.exports = { requestNear, CRATE_GAP, CHEST_GAP, CLEAR_MARGIN, CRATE_SIZE, FOOT_R, ON, FIRST_MS, GAP_MS, WARN_MS, FALL_MS, CRATE_GEMS, attach, enabled, tick, snapshot, current, reset, debugNow, pickSpot, _count: () => count };
+module.exports = { requestNear, teamDrop, CRATE_GAP, CHEST_GAP, CLEAR_MARGIN, CRATE_SIZE, FOOT_R, ON, FIRST_MS, GAP_MS, WARN_MS, FALL_MS, CRATE_GEMS, attach, enabled, tick, snapshot, current, reset, debugNow, pickSpot, _count: () => count };

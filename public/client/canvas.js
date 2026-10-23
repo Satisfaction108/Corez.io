@@ -8,6 +8,7 @@ import { touch, inputModeWatch } from "./touch.js";
 import * as abilityFx from "./abilityFx.js";
 import { predictor } from "./predict.js";
 import * as raidPerks from "./raidPerks.js";
+import * as teamWar from "./teamWar.js";
 import * as raidFinale from "./raidFinale.js";
 import { attachEmoji } from "./emoji.js";
 import * as upGrid from "./upgradeGridLogic.js";
@@ -33,7 +34,7 @@ function overHudButton(mpos) {
         c.skipUpgrades.check(mpos) !== -1 || (c.royalePlay && c.royalePlay.check(mpos) !== -1) ||
         (c.lastTank && c.lastTank.check(mpos) !== -1) || (c.statBtn && c.statBtn.check(mpos) !== -1) ||
         (c.upgradePage && c.upgradePage.check(mpos) !== -1) ||
-        raidPerks.hit(mpos.x / guiScale(), mpos.y / guiScale());
+        raidPerks.hit(mpos.x / guiScale(), mpos.y / guiScale()) || teamWar.hit(mpos.x / guiScale(), mpos.y / guiScale());
 }
 function inGuiBox(mpos, b, pad = 0) {
     return !!b && mpos.x >= b.x - pad && mpos.x <= b.x + b.w + pad && mpos.y >= b.y - pad && mpos.y <= b.y + b.h + pad;
@@ -490,6 +491,7 @@ class Canvas {
             return true;
         }
         // raid perk cards: Shift+1/2/3 (plain digits stay the stat keys)
+        if (teamWar.key(event)) return true;
         if (raidPerks.key(event)) return true;
         // the raid card (firstSeconds.js): Esc lets it go early
         if (kc === global.KEY_ESC && !event.repeat && global.introCardUp && global.introSkip && global.introSkip()) return true;
@@ -909,6 +911,7 @@ class Canvas {
                 }
                 // a raid perk card, its Later button or the Perk ready chip:
                 // picked or opened here, and the press never fires the gun
+                if (teamWar.click(mpos.x / guiScale(), mpos.y / guiScale())) break;
                 if (raidPerks.click(mpos.x / guiScale(), mpos.y / guiScale())) break;
                 // raid results: the Keep button, or a click that puts kept results away
                 if (raidFinale.click(mpos.x / guiScale(), mpos.y / guiScale())) break;

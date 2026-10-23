@@ -23,6 +23,20 @@ function body(def, n = 0) {
 // 1. the new tanks
 for (const t of D.tanks) Class[t.key] = copy(t.def);
 
+const gunAngle = g => { const p = g && g.POSITION; if (!p) return 0; const a = Array.isArray(p) ? p[5] : p.ANGLE; return ((((+a || 0) % 360) + 540) % 360) - 180; };
+const rearGun = g => Math.abs(gunAngle(g)) >= 120;
+const isBird = def => arr(get(def, 'GUNS')).some(g => g.PROPERTIES && g.PROPERTIES.ALT_FIRE);
+for (const t of [...D.tanks].sort((a, b) => a.tier - b.tier)) {
+    const def = Class[t.key];
+    if (!def || !Array.isArray(def.GUNS)) continue;
+    if (!t.parents.some(p => isBird(Class[p]))) continue;
+    const firing = def.GUNS.filter(g => g.PROPERTIES && g.PROPERTIES.SHOOT_SETTINGS);
+    const rear = firing.filter(rearGun);
+    const front = firing.filter(g => !rearGun(g) && !g.PROPERTIES.AUTOFIRE && !['drone', 'necro', 'swarm'].includes(g.PROPERTIES.STAT_CALCULATOR));
+    if (rear.length < 2 || !front.length) continue;
+    for (const g of front) g.PROPERTIES.ALT_FIRE = true;
+}
+
 // 2. balance: every damage number of a new tank times s
 let made = 0;
 const armed = def => arr(get(def, 'GUNS')).some(g => g.PROPERTIES && g.PROPERTIES.SHOOT_SETTINGS) || arr(get(def, 'TURRETS')).some(t => armed(resolve(t.TYPE)));

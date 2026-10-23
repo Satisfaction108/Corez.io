@@ -8,6 +8,7 @@ import * as api from './api.js';
 import * as store from './state.js';
 import { toast } from './ui.js';
 import { rankOf } from './people.js';
+import { receive as teamInviteReceive } from './teamInvite.js';
 
 const POLL_MS = 15000;
 const ES_RETRY_MS = 120000;   // after falling back, try the stream again this often
@@ -335,6 +336,7 @@ function onEvent(type, d) {
         case 'storeReset': hooks.onStoreReset(d); break;
         // an admin re-rolled today's shop
         case 'shopRotated': hooks.onShopRotated(d); break;
+        case 'teamInvite': teamInviteReceive(d); break;
         case 'party': case 'partyInvite': case 'partyInviteGone':
             partySubs.forEach((fn) => { try { fn(type, d || {}); } catch (e) { console.error(e); } });
             break;
@@ -348,7 +350,7 @@ function onEvent(type, d) {
     }
 }
 
-const TYPES = ['hello', 'presence', 'friendRequest', 'friendRequestCanceled', 'outgoingAdded', 'outgoingRemoved', 'friendAccepted', 'friendRemoved', 'friendRankUp', 'gift', 'dm', 'dmRead', 'storeReset', 'shopRotated', 'sessionRevoked', 'party', 'partyInvite', 'partyInviteGone', 'invite', 'streak'];
+const TYPES = ['hello', 'presence', 'friendRequest', 'friendRequestCanceled', 'outgoingAdded', 'outgoingRemoved', 'friendAccepted', 'friendRemoved', 'friendRankUp', 'gift', 'dm', 'dmRead', 'storeReset', 'shopRotated', 'sessionRevoked', 'party', 'partyInvite', 'partyInviteGone', 'invite', 'streak', 'teamInvite'];
 // Duo party events (party.js): fn(type, data)
 const partySubs = new Set();
 export function onParty(fn) { partySubs.add(fn); return () => partySubs.delete(fn); }

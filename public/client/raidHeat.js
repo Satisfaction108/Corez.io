@@ -40,6 +40,7 @@ import * as skyDrop from "./skyDrop.js";
 import * as mineDust from "./mineDust.js";
 import * as eventFx from "./eventFx.js";
 import { shows as nxShows } from "./newcomerLogic.js";
+import { huntHidden, personHex, teamHex, skullIcon } from "./teamWar.js";
 // the first-raids stage (newcomer.js keeps it fresh); 3 = veteran
 const nx = () => global.nxStage == null ? 3 : global.nxStage;
 
@@ -74,7 +75,7 @@ const S = {
     downAt: 0, downX: 0, downY: 0, collAt: -1e9, collMs: 1600, collX: 0, collY: 0, collR: 110,
     safeAt: 0, huntedAt: 0, coreUpAt: 0,
     raidId: 0, banked: 0, depStart: -1, doneAt: 0, firstBank: false,
-    combo: 0, comboAt: -1e9, ryCount: 0, meteorN: 0, crateSrc: null, crateIds: new Set(), supplyPingAt: -1e9, supplyX: 0, supplyY: 0, supplyZ: 72, bossSeen: 0, bossUpAt: -1e9, bossX: 0, bossY: 0,
+    combo: 0, comboAt: -1e9, ryCount: 0, meteorN: 0, teamCrateN: 0, teamSoon: [], crateSrc: null, crateIds: new Set(), supplyPingAt: -1e9, supplyX: 0, supplyY: 0, supplyZ: 72, bossSeen: 0, bossUpAt: -1e9, bossX: 0, bossY: 0,
     stormCycle: -1, stormRaid: 0, cdLast: 0, lightningAt: 0,
     lockAim: false, lockFrom: 0, hitAt: -1e9, hitAng: 0, hitSet: 0, foeAng: NaN, depTickAt: 0, depRingAt: 0, beamsAt: -1e9, coreX: 0, coreY: 0,
 };
@@ -326,12 +327,25 @@ export function onFX(kind, x, y, extra, extra2, extra3, extra4) {
             skyDrop.start(x, y, extra | 0, extra2 | 0, extra3 | 0, (extra4 | 0) === 1);
             return true;
         case "supplysoon":
+            if ((extra3 | 0) === 1 || (extra3 | 0) === 2) {
+                const col = teamHex(extra3 | 0);
+                S.teamSoon.push({ x, y, z: (extra2 | 0) || 72, col, until: now + Math.max(0, extra | 0) });
+                if (S.teamSoon.length > 8) S.teamSoon.shift();
+                ring(x, y, col, 40, 420, 1100, 10);
+                try { if (gameSound.uiClick) gameSound.uiClick(); } catch (e) { void e; }
+                return true;
+            }
             // a supply drop on its way: a ping on the map, a ring where it lands
             S.supplyPingAt = now; S.supplyX = x; S.supplyY = y; S.supplyZ = (extra2 | 0) || 72;
             ring(x, y, GOLD, 40, 420, 1100, 10);
             try { if (gameSound.uiClick) gameSound.uiClick(); } catch (e) { /* */ }
             return true;
         case "supplyfall":
+            if ((extra3 | 0) === 1 || (extra3 | 0) === 2) {
+                S.teamCrateN = (S.teamCrateN + 1) % 20;
+                skyDrop.start(x, y, -60 - S.teamCrateN, 170, extra | 0, true, 'crate', (extra2 | 0) || 72, teamHex(extra3 | 0), extra3 | 0);
+                return true;
+            }
             // 170: supplyDrops.js SMASH_R; extra2 the crate's size
             skyDrop.start(x, y, -7, 170, extra | 0, true, 'crate', (extra2 | 0) || S.supplyZ);
             return true;
@@ -339,6 +353,35 @@ export function onFX(kind, x, y, extra, extra2, extra3, extra4) {
             // one rock of a meteor shower on its way down (raidEvents.js)
             skyDrop.start(x, y, -100 - (S.meteorN = (S.meteorN + 1) % 40), 95, extra | 0, true, 'meteor');
             return true;
+        case "titandown": {
+            const col = teamHex((extra | 0) === 2 ? 2 : 1);
+            const d = Math.hypot(x - global.player.renderx, y - global.player.rendery);
+            const k = clamp(1 - d / 3200);
+            ring(x, y, "#ffffff", 60, 1500, 1100, 26);
+            ring(x, y, col, 40, 1150, 1500, 18);
+            ring(x, y, GOLD, 30, 800, 1700, 10);
+            juice.sparks(x, y, 70, 900, 1500, 1, col, TAU, 0, 16);
+            juice.sparks(x, y, 40, 700, 1300, 1, "#2b2433", TAU, 0, 12);
+            juice.sparks(x, y, 50, 760, 1500, 2, GOLD, TAU, 0, 8);
+            juice.sparks(x, y, 30, 1100, 1700, 0, "#ffe9b0", TAU, 0, 6);
+            if (k > 0) {
+                juice.shake(20 + 70 * k, 500 + 900 * k, 20 + 32 * k);
+                juice.rumble(600 + 1200 * k, 2 + 7 * k);
+                if (k > 0.45) { juice.hitStop(70, 90); juice.flash("#ffffff", 420, 0.35 + 0.4 * k); }
+            }
+            sfx("core");
+            return true;
+        }
+        case "titanrise": {
+            const col = teamHex((extra | 0) === 2 ? 2 : 1);
+            const d = Math.hypot(x - global.player.renderx, y - global.player.rendery);
+            ring(x, y, col, 30, 520, 900, 12);
+            ring(x, y, "#ffffff", 20, 360, 600, 8);
+            juice.sparks(x, y, 30, 420, 1000, 2, col, Math.PI * 0.9, -Math.PI / 2, 8);
+            juice.sparks(x, y, 18, 300, 900, 1, "#2b2433", TAU, 0, 9);
+            if (d < 1600) juice.shake(10 + 14 * (1 - d / 1600), 360);
+            return true;
+        }
         case "tankdead": {
             // someone else went down near you: their colour shatters out (the
             // app's own burst still plays)
@@ -591,21 +634,29 @@ const DASH = [18, 14], NO_DASH = [];
 // a supply drop on its way: its exact footprint marked on the ground until
 // the falling crate's own marker takes over (skyDrop.js)
 function drawSupplyGround(c, px, py, ratio) {
+    const now = performance.now();
+    for (let i = S.teamSoon.length - 1; i >= 0; i--) {
+        const t = S.teamSoon[i];
+        if (now > t.until) { S.teamSoon.splice(i, 1); continue; }
+        if (t.until - now >= 1500) drawSupplyFootprint(c, t.x, t.y, t.z, t.col, px, py, ratio, now);
+    }
     const sup = global.royale && global.royale.supply;
     if (!sup || sup.s !== "soon") return;
-    const now = performance.now();
     const left = (sup.left || 0) - (now - (global.royale.at || now));
     if (left < 1500) return;
-    const R = (sup.z || S.supplyZ || 72) * ratio;
-    const sx = ratio * sup.x - px + global.screenWidth / 2, sy = ratio * sup.y - py + global.screenHeight / 2;
+    drawSupplyFootprint(c, sup.x, sup.y, sup.z || S.supplyZ || 72, "#6ff5a8", px, py, ratio, now);
+}
+function drawSupplyFootprint(c, wx, wy, z, col, px, py, ratio, now) {
+    const R = z * ratio;
+    const sx = ratio * wx - px + global.screenWidth / 2, sy = ratio * wy - py + global.screenHeight / 2;
     if (sx < -R * 2 || sy < -R * 2 || sx > global.screenWidth + R * 2 || sy > global.screenHeight + R * 2) return;
     const beat = calm() ? 0.5 : 0.5 + 0.5 * Math.sin(now / 260);
     c.save();
     c.globalAlpha = 0.1 + 0.08 * beat;
-    c.fillStyle = "#6ff5a8";
+    c.fillStyle = col;
     c.beginPath(); c.arc(sx, sy, R, 0, TAU); c.fill();
     c.globalAlpha = 0.55 + 0.3 * beat;
-    c.strokeStyle = "#6ff5a8"; c.lineWidth = Math.max(1.5, 3 * ratio);
+    c.strokeStyle = col; c.lineWidth = Math.max(1.5, 3 * ratio);
     DASH[0] = 14 * ratio; DASH[1] = 10 * ratio;
     c.setLineDash(DASH);
     c.lineDashOffset = calm() ? 0 : -now / 50;
@@ -971,13 +1022,13 @@ export function worldMarks(marks, toScreen, onScreen, me, trackPos, ratio) {
     const myId = gui.playerid, mid = mateId();
     let best = null;
     if (r.hunt && nxShows("hunted", nx())) for (const h of r.hunt) {
-        if (h.e === myId || h.e === mid) continue;
+        if (h.e === myId || h.e === mid || huntHidden(h)) continue;
         const p = trackPos("hunt" + h.e, h.x, h.y, 0.7);
         const s = toScreen(p.x, p.y);
         if (onScreen(s, -20)) continue;
         const d = Math.hypot(p.x - me.x, p.y - me.y);
         if (d > scr * (h.l >= 2 ? 2.5 : 1.5)) continue;
-        if (!best || h.l > best.l || (h.l === best.l && d < best.d)) best = { pri: 1.5, s, col: RED, glyph: "skull", name: (h.l >= 2 ? "TOP TARGET " : "HUNTED ") + numOf(h), d, l: h.l };
+        if (!best || h.l > best.l || (h.l === best.l && d < best.d)) best = { pri: 1.5, s, col: personHex(h.e, h.tm) || RED, glyph: "skull", name: "Hunted " + numOf(h), d, l: h.l };
     }
     if (best) marks.push(best);
     const sp = r.supply;
@@ -996,14 +1047,15 @@ export function worldMarks(marks, toScreen, onScreen, me, trackPos, ratio) {
 const badges = new Map();
 export function badge(id) {
     const h = S.huntById.get(id);
-    if (!h || id === mateId() || !nxShows("hunted", nx())) return null;
-    const word = h.l >= 2 ? "TOP TARGET " : "HUNTED ";
+    if (!h || id === mateId() || huntHidden(h) || !nxShows("hunted", nx())) return null;
+    const word = "HUNTED ";
     const num = numOf(h);
-    const key = "hu" + h.l + num;
+    const col = personHex(h.e, h.tm) || RED;
+    const key = "hu" + h.l + num + col;
     let b = badges.get(key);
     if (!b) {
         if (badges.size > 60) badges.clear();
-        b = { key, word, num, col: RED, icon: "target" };
+        b = { key, word, num, col, icon: "skull", top: h.l >= 2 };
         badges.set(key, b);
     }
     return b;
@@ -1092,21 +1144,16 @@ export function drawMap(c, T, inside, dotR, pulse, mapLabel, trackPos) {
     }
     if (!r.hunt || !nxShows("hunted", nx())) return;
     for (const h of r.hunt) {
-        if (h.e === myId || h.e === mid) continue;
+        if (h.e === myId || h.e === mid || huntHidden(h)) continue;
         const tp = trackPos("hunt" + h.e, h.x, h.y, 0.7);
         const mx = T.X(tp.x), my = T.Y(tp.y);
         if (!inside(mx, my)) continue;
         const top = h.l >= 2;
-        const beat = 0.5 + 0.5 * Math.sin(now / (top ? 140 : 220));
-        c.save();
-        c.globalAlpha = 0.55 + 0.45 * beat;
-        c.strokeStyle = RED; c.lineWidth = top ? 2.6 : 1.8;
-        c.beginPath(); c.arc(mx, my, dotR * (top ? 4.4 : 3) * (0.85 + 0.3 * beat), 0, TAU); c.stroke();
-        c.globalAlpha = 1;
-        c.fillStyle = RED; c.strokeStyle = "#000"; c.lineWidth = 1.6;
-        c.beginPath(); c.arc(mx, my, dotR * (top ? 1.7 : 1.25), 0, TAU); c.fill(); c.stroke();
-        c.restore();
-        if (top) mapLabel(numOf(h), mx, my - dotR * 4.6, true, RED);
+        const beat = 0.5 + 0.5 * Math.sin(now / (top ? 160 : 240));
+        const col = personHex(h.e, h.tm) || RED;
+        const sr = dotR * (top ? 2 : 1.6) * (0.94 + 0.08 * beat);
+        skullIcon(c, mx, my, sr, col, "#000");
+        mapLabel("Hunted", mx, my - sr * 1.15, true, col, true);
     }
 }
 
@@ -1131,8 +1178,9 @@ export function drawCoreCard(c, x, y, W, H) {
     const gems = fmt(core.g || 0) + " gems";
     const gw = A.hudTitleW(gems, 12);
     let ns = 14; while (ns > 10 && A.hudTitleW("The Core", ns) > W - 40 - gw) ns -= 0.5;
-    A.hudTitle("The Core", x + 28, y + 13, ns, col, "left");
-    A.hudTitle(gems, x + W - 10, y + 13, 12, GOLD, "right");
+    const title = A.hudLabel || A.hudTitle;
+    title("The Core", x + 28, y + 13, ns, col, "left");
+    title(gems, x + W - 10, y + 13, 12, GOLD, "right");
     A.hudBar(c, x + 10, y + 22, W - 20, 8, core.hp, hot ? CORE_HOT : core.hp > 0.6 ? CORE : "#9ff6ff");
     const dist = Math.hypot(core.x - global.player.renderx, core.y - global.player.rendery);
     A.drawText(Math.round(core.hp * 100) + "%" + (hot ? "  ·  Fighting back" : ""), x + 12, y + H - 8, 9.5, hot ? CORE_HOT : A.HUD.text2, "left", true);
@@ -1270,7 +1318,7 @@ export function slamBanked(title, bonus) {
 const LOOT_COL = { common: "#b4b8bd", uncommon: "#5fd068", rare: "#4aa3ff", epic: "#b06bff", legendary: "#ffb23d" };
 export function feedLine(f, who, tag) {
     if (f.bounty) return { text: tag(String(f.by || "Someone").slice(0, 13), GOLD) + " hunted down " + who(f.name, "someone"), badge: f.g ? { t: "+" + fmt(f.g), col: GOLD } : null };
-    if (f.hunt) return { text: who(f.name, "Someone") + " is the top target", badge: { t: fmtK(f.g | 0), col: RED } };
+    if (f.hunt) return { text: who(f.name, "Someone") + " is now the Hunted player", badge: { t: fmtK(f.g | 0), col: RED } };
     if (f.cloot) return { text: (f.by ? tag(String(f.by).slice(0, 13), GOLD) : "Someone") + " found " + tag(String(f.item || "loot").slice(0, 24), LOOT_COL[f.rar] || GOLD) + " in the Core", badge: null };
     if (f.core && f.spawn) return { text: tag("The Core", CORE) + " is up", badge: null };
     if (f.core && f.broke) return { text: (f.by ? tag(String(f.by).slice(0, 13), GOLD) : "Someone") + " broke " + tag("the Core", CORE), badge: f.g ? { t: "+" + fmt(f.g), col: GOLD } : null };

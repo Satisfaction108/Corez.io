@@ -22,6 +22,7 @@ import * as juice from "./juice.js";
 import * as CL from "./crownsLogic.js";
 import * as SL from "./scoreLogic.js";
 import { drawCrown, drawCrownIcon, ASPECT } from "./crownArt.js";
+import { personHex, huntedIds } from "./teamWar.js";
 
 let A = null;
 export function init(helpers) { A = helpers; }
@@ -222,7 +223,7 @@ export function drawOverhead(c, x, y, top, isize, ratio, alpha, id) {
         c.restore();
         c.scale(pk, pk);
     }
-    drawCrown(c, 0, 0, w, alpha);
+    drawCrown(c, 0, 0, w, alpha, personHex(id) || "gold");
     c.restore();
 }
 // the landing pop: 2.4x, a small overshoot, then 1
@@ -245,7 +246,7 @@ export function worldMarks(marks, toScreen, onScreen, me, trackPos) {
         const s = toScreen(p.x, p.y);
         if (onScreen(s, -20)) continue;
         const d = Math.hypot(p.x - me.x, p.y - me.y);
-        if (!best || d < best.d) best = { pri: 0.4, s, col: GOLD, glyph: "crown", name: "CROWN " + String(row.n || "").slice(0, 10).toUpperCase(), d };
+        if (!best || d < best.d) best = { pri: 0.4, s, col: personHex(row.e) || GOLD, glyph: "crown", name: "CROWN " + String(row.n || "").slice(0, 10).toUpperCase(), d };
     }
     if (best) marks.push(best);
 }
@@ -256,29 +257,28 @@ export function drawMap(c, T, inside, dotR, pulse) {
     const now = performance.now();
     const myId = gui.playerid;
     const fz = S.c.fz || 450;
+    const hunted = huntedIds();
     for (const row of CL.rows(S.c)) {
+        if (hunted.has(row.e)) continue;
         const mx = T.X(row.x), my = T.Y(row.y);
         if (!inside(mx, my)) continue;
+        const tint = personHex(row.e);
+        const col = tint || GOLD;
         c.save();
         if (row.f && row.e !== myId) {
             // until sudden death the map only knows the area
             const rr = Math.max(dotR * 3, Math.abs(T.X(row.x + fz * 0.7) - mx));
             c.globalAlpha = 0.16 + 0.06 * Math.sin(now / 300);
-            c.fillStyle = GOLD;
+            c.fillStyle = col;
             c.beginPath(); c.arc(mx, my, rr, 0, TAU); c.fill();
             c.globalAlpha = 0.7;
-            c.strokeStyle = GOLD; c.lineWidth = 1.5;
+            c.strokeStyle = col; c.lineWidth = 1.5;
             c.setLineDash([4, 4]);
             c.beginPath(); c.arc(mx, my, rr, 0, TAU); c.stroke();
             c.setLineDash([]);
             c.globalAlpha = 0.85;
-        } else {
-            c.globalAlpha = 0.9;
-            c.strokeStyle = S.c.sd ? RED : GOLD; c.lineWidth = 2;
-            c.beginPath(); c.arc(mx, my, dotR * 3.6 * pulse, 0, TAU); c.stroke();
-            c.globalAlpha = 1;
         }
-        drawCrownIcon(c, mx, my, Math.max(9, dotR * 3.4));
+        drawCrownIcon(c, mx, my, Math.max(9, dotR * 3.4) * (0.95 + 0.05 * pulse), tint || "gold");
         c.restore();
     }
 }

@@ -95,6 +95,11 @@ function restore(opts, now = Date.now()) {
         if (row.used_at != null) return { ok: false, reason: 'used' };
         if (row.expires_at <= now) return { ok: false, reason: 'expired' };
         if (row.mode !== opts.mode && !(row.mode === 'duo' && opts.mode === 'solo')) return { ok: false, reason: 'mode', mode: row.mode };
+        if (opts.gameMode) {
+            let gm = 'ffa';
+            try { gm = (JSON.parse(row.data) || {}).gm || 'ffa'; } catch (e) { gm = 'ffa'; }
+            if (gm !== opts.gameMode) return { ok: false, reason: 'mode', mode: gm };
+        }
         const tag = ipTag(d, opts.ip);
         const since = now - RESTORE_GAP_MS;
         const clauses = [], args = [];

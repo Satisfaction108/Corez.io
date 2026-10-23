@@ -77,9 +77,77 @@ function pushOutOfChamberRing(chamber, body) {
 // Advanced collision impulses are soft, so two fast tanks can stay inside each
 // other for a frame. Bots must never share a hull with a player or teammate,
 // so resolve the remaining penetration after the normal collision response.
+let teamModeMod = null;
+function teamsLive() {
+    try { return (teamModeMod ||= require('./terrain/teamMode.js')).isActive(); } catch { return false; }
+}
+const TEAM_SOFT = { push: 0.12, deep: 0.55, deepPush: 0.3, spring: 0.035, damp: 0.25 };
+const TITAN_SOFT = { push: 0.45, damp: 0.85, carry: 0.6 };
+function isTeamTank(e) { return e.type === 'tank' && (e.isPlayer || e.isBot) && !e.isTitan; }
+function pairNormal(a, b) {
+    let dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
+    if (d < 0.001) {
+        const v = a.isTitan ? a.velocity : b.velocity;
+        const vl = v ? Math.hypot(v.x, v.y) : 0;
+        if (vl > 0.01) { dx = v.x / vl; dy = v.y / vl; }
+        else {
+            const angle = (((a.id || 0) * 0.754877666) + ((b.id || 1) * 1.324717957)) % (Math.PI * 2);
+            dx = Math.cos(angle); dy = Math.sin(angle);
+        }
+        return { nx: dx, ny: dy, d: 0 };
+    }
+    return { nx: dx / d, ny: dy / d, d };
+}
+function softTeamPush(a, b) {
+    const ra = a.realSize || a.size || 1, rb = b.realSize || b.size || 1;
+    const min = ra + rb;
+    const { nx, ny, d } = pairNormal(a, b);
+    if (d >= min) return;
+    const overlap = min - d;
+    const aShare = (rb * rb) / (ra * ra + rb * rb);
+    const k = overlap > min * TEAM_SOFT.deep ? TEAM_SOFT.deepPush : TEAM_SOFT.push;
+    a.x -= nx * overlap * k * aShare; a.y -= ny * overlap * k * aShare;
+    b.x += nx * overlap * k * (1 - aShare); b.y += ny * overlap * k * (1 - aShare);
+    const spring = overlap * TEAM_SOFT.spring;
+    a.velocity.x -= nx * spring * aShare; a.velocity.y -= ny * spring * aShare;
+    b.velocity.x += nx * spring * (1 - aShare); b.velocity.y += ny * spring * (1 - aShare);
+    const rel = (b.velocity.x - a.velocity.x) * nx + (b.velocity.y - a.velocity.y) * ny;
+    if (rel < 0) {
+        const j = -rel * TEAM_SOFT.damp;
+        a.velocity.x -= nx * j * aShare; a.velocity.y -= ny * j * aShare;
+        b.velocity.x += nx * j * (1 - aShare); b.velocity.y += ny * j * (1 - aShare);
+    }
+}
+function titanPush(titan, body) {
+    const rt = titan.realSize || titan.size || 1, rb = body.realSize || body.size || 1;
+    const min = rt + rb;
+    const { nx, ny, d } = pairNormal(titan, body);
+    if (d >= min) return;
+    const overlap = min - d;
+    const both = !!(body.isTitan || body.isRoyaleBoss);
+    const bShare = both ? 0.5 : 1;
+    const move = overlap * (d < rt ? Math.max(TITAN_SOFT.push, 1 - d / rt) : TITAN_SOFT.push);
+    body.x += nx * move * bShare; body.y += ny * move * bShare;
+    if (both) { titan.x -= nx * move * 0.5; titan.y -= ny * move * 0.5; }
+    const rel = (body.velocity.x - titan.velocity.x) * nx + (body.velocity.y - titan.velocity.y) * ny;
+    if (rel < 0) {
+        const j = -rel * TITAN_SOFT.damp;
+        body.velocity.x += nx * j * bShare; body.velocity.y += ny * j * bShare;
+        if (both) { titan.velocity.x -= nx * j * 0.5; titan.velocity.y -= ny * j * 0.5; }
+    }
+    if (!both) {
+        const carry = (titan.velocity.x * nx + titan.velocity.y * ny) * TITAN_SOFT.carry;
+        if (carry > 0) {
+            const bv = body.velocity.x * nx + body.velocity.y * ny;
+            if (bv < carry) { body.velocity.x += nx * (carry - bv); body.velocity.y += ny * (carry - bv); }
+        }
+    }
+}
+
 function separateBotTanks(first, second) {
     if (first.type !== 'tank' || second.type !== 'tank' ||
         (!first.isBot && !second.isBot)) return;
+    if (first.team === second.team && teamsLive()) return;
     const firstRadius = first.realSize || first.size || 1;
     const secondRadius = second.realSize || second.size || 1;
     let dx = second.x - first.x, dy = second.y - first.y;
@@ -408,6 +476,18 @@ class gameHandler {
                 if (dealt > 0) { boss.damageReceived += dealt; boss.collisionArray.push(min); }
                 if (min.health && min.health.max > 0) { min.damageReceived += min.health.max / MINION_BOSS_TICKS; min.collisionArray.push(boss); }
             } break;
+            case (instance.isTitan && !other.isRoyaleProtector && (other.type === "tank" || other.isTitan || other.isRoyaleBoss)) ||
+                (other.isTitan && !instance.isRoyaleProtector && (instance.type === "tank" || instance.isTitan || instance.isRoyaleBoss)): {
+                const titan = instance.isTitan ? instance : other;
+                const body = titan === instance ? other : instance;
+                if (titan.isDead?.() || body.isDead?.()) break;
+                if (titan.team !== body.team) advancedcollide(instance, other, true, true);
+                titanPush(titan, body);
+            } break;
+            case instance.team === other.team && isTeamTank(instance) && isTeamTank(other) &&
+                !instance.isDominator && !other.isDominator && teamsLive():
+                softTeamPush(instance, other);
+                break;
             case instance.team === other.team &&
                 (instance.settings.hitsOwnType === "pushOnlyTeam" ||
                     other.settings.hitsOwnType === "pushOnlyTeam"):
@@ -1173,6 +1253,7 @@ class gameHandler {
         // follows the player's bot difficulty: one for a newcomer, three for
         // the best (miscFiles/botDifficulty.js company).
         const NEAR = 900;
+        const teamLayout = Config.royale_teams && Config.dig_royale && !Config.tutorial ? require('./terrain/teamLayout.js') : null;
         for (const host of humans) {
             const WANT = botDiff.company(botDiff.of(host, now));
             const near = live.filter(b => Math.hypot(b.x - host.x, b.y - host.y) <= NEAR);
@@ -1180,6 +1261,10 @@ class gameHandler {
 
             // a protected player (terrain/fairPlay.js) gets the small fish first and never a
             const prot = fairPlay.isProtected(host, now);
+            if (teamLayout && teamLayout.isTeam(host.team)) {
+                this.directTeamCompany(host, live, near, WANT - near.length, prot, now, teamLayout);
+                continue;
+            }
             const candidates = live
                 .filter(b => !near.includes(b) && now >= (b._botDirectorUntil || 0) && !(prot && fairPlay.isBig(b)) &&
                     // a bait has its own host
@@ -1200,6 +1285,36 @@ class gameHandler {
                 // (a bigger raid map gives the walk longer: terrain/mapScale.js)
                 bot._botDirectorUntil = now + Math.round(14000 * require('./terrain/mapScale.js').lin());
             }
+        }
+    }
+
+    directTeamCompany(host, live, near, need, prot, now, L) {
+        if (need <= 0) return;
+        if (L.inBase(host.team, host.x, host.y, 200) || L.inDroneZone(host.team, host.x, host.y, 150)) return;
+        const free = b => !near.includes(b) && now >= (b._botDirectorUntil || 0) && !b._fpBait;
+        const fromHost = b => Math.hypot(b.x - host.x, b.y - host.y);
+        const mates = live.filter(b => b.team === host.team && free(b)).sort((a, b) => fromHost(a) - fromHost(b));
+        const foes = live.filter(b => b.team !== host.team && L.isTeam(b.team) && free(b) &&
+            !(prot && fairPlay.isBig(b)) && !fairPlay.farmed(b, host, now))
+            .sort((a, b) => (prot ? (b.botMinnow ? 1 : 0) - (a.botMinnow ? 1 : 0) : 0) || fromHost(a) - fromHost(b));
+        const walk = Math.round(14000 * require('./terrain/mapScale.js').lin());
+        let turn = 0;
+        while (need > 0 && (mates.length || foes.length)) {
+            const pickFoe = foes.length > 0 && (!mates.length || turn % 2 === 1);
+            const bot = pickFoe ? foes.shift() : mates.shift();
+            turn++;
+            const dist = 380 + Math.random() * 440;
+            let angle = Math.random() * Math.PI * 2;
+            if (pickFoe) {
+                const home = L.sitesFor(bot.team).mouth;
+                angle = Math.atan2(home.y - host.y, home.x - host.x) + (Math.random() - 0.5) * 1.8;
+            }
+            const x = host.x + Math.cos(angle) * dist, y = host.y + Math.sin(angle) * dist;
+            const enemyOf = pickFoe ? host.team : L.other(host.team);
+            if (L.inBase(enemyOf, x, y, 150) || L.inDroneZone(enemyOf, x, y, 150)) continue;
+            bot._botDirectorPoint = { x, y };
+            bot._botDirectorUntil = now + walk;
+            need--;
         }
     }
 

@@ -62,7 +62,8 @@ function getVaults() {
         const tg = global.gameManager && global.gameManager.terrainGrid;
         if (!tg || !tg.vaultSites || !tg.vaultSites.length) return [];
         vaults = tg.vaultSites.map(s => ({
-            x: s.x, y: s.y, r: s.r || PAD_RADIUS, team: 0, rainbow: true, name: s.name || "Vault",
+            x: s.x, y: s.y, r: s.r || PAD_RADIUS, team: s.team || 0, rainbow: s.rainbow !== false && !s.team, name: s.name || "Vault",
+            kind: s.kind || undefined, homeTeam: s.homeTeam || undefined,
         }));
         return vaults;
     }
@@ -84,7 +85,7 @@ function getVaults() {
 
 // Compact list for the TG snapshot.
 function snapshot() {
-    return getVaults().map(v => ({ x: v.x, y: v.y, r: v.r, team: v.team, rainbow: !!v.rainbow, name: v.name || "Vault" }));
+    return getVaults().map(v => ({ x: v.x, y: v.y, r: v.r, team: v.team, rainbow: !!v.rainbow, name: v.name || "Vault", kind: v.kind || undefined }));
 }
 
 function talkProgress(body) {
@@ -371,7 +372,7 @@ function tick(actors, dtMs) {
 
         let pad = null;
         for (const v of list) {
-            if (!Config.dig_royale && v.team !== body.team) continue;
+            if (v.team !== body.team && (!Config.dig_royale || v.team)) continue;
             if (onPadShape(v, body.x - v.x, body.y - v.y)) { pad = v; break; }
         }
         // bank cover (fairPlay.js): slightly softer shots while banking and just after
@@ -388,7 +389,7 @@ function tick(actors, dtMs) {
         if (!denyPad) {
             const br = body.realSize || 60;
             for (const v of list) {
-                if (!Config.dig_royale && v.team !== body.team) continue;
+                if (v.team !== body.team && (!Config.dig_royale || v.team)) continue;
                 if (onPadShape(v, body.x - v.x, body.y - v.y, br)) { denyPad = v; break; }
             }
         }

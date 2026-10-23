@@ -26,6 +26,12 @@ const cache = new Map();
 // the rim scales with the crown like a tank's border, within reason
 const rimFor = (w) => Math.max(1.25, Math.min(4.5, w * 0.06));
 
+function lighter(hex) {
+    const n = parseInt(hex.slice(1), 16);
+    const mix = (v) => Math.round(v + (255 - v) * 0.45);
+    return "#" + ((1 << 24) | (mix((n >> 16) & 255) << 16) | (mix((n >> 8) & 255) << 8) | mix(n & 255)).toString(16).slice(1);
+}
+
 // -> { cv, w, ax, ay }: the crown is `w` sprite px wide, its base centre at
 // (ax, ay). Draw with scale (wanted width / w).
 export function crownSprite(tint = "gold", width = 60) {
@@ -33,7 +39,7 @@ export function crownSprite(tint = "gold", width = 60) {
     const key = tint + b;
     let s = cache.get(key);
     if (s) return s;
-    const [fill, hi] = TINTS[tint] || TINTS.gold;
+    const [fill, hi] = TINTS[tint] || (typeof tint === "string" && /^#[0-9a-f]{6}$/i.test(tint) ? [tint, lighter(tint)] : TINTS.gold);
     const dw = Math.pow(STEP, b);          // drawn width this bake is for
     const rim = rimFor(dw) * OS;
     const W = dw * OS, u = W / SPAN_W;

@@ -55,6 +55,8 @@ const WINDOWS = {
     achievements:  { limit: 30,  windowMs: 1 * MIN },   // achievement panel loads per IP
     levels:        { limit: 30,  windowMs: 1 * MIN },
     clientErr:     { limit: 6,   windowMs: 10 * MIN },
+    teamInvite:    { limit: 20,  windowMs: 10 * MIN },
+    teamInvitePair: { limit: 3,  windowMs: 2 * MIN },
 };
 
 const BACKOFFS = {

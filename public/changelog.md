@@ -1,3 +1,20 @@
+# Update [2026-10-22] 2TDM is here!
+- <a href="#cinematic" class="dw-watch-cinematic">Watch cinematic</a>
+- Blue vs Red! You get put on whichever team needs you, and bots fill both sides so there's always a full fight.
+- Each team has a base on its side of the map. Your base is safe, but step on the enemy's tiles and you die on the spot, and their Base Protectors send drones at anyone who gets close.
+- Bank gems to raise your team score. The Team Bank is in the middle of your base, the Eye Vault is a forward bank just outside it, and the Center Vault is neutral (and the most dangerous place to bank). The score resets every day.
+- Banking and winning fights fill your team's War Meter. Spend it at the War Pad in your base on a Radar Sweep, two Supply Crates only your team can open, or a giant Titan that marches on the enemy base.
+- Kill an enemy Titan for a team bounty and a huge pile of gems. Base Protectors only chip at a Titan, so someone has to go stop it.
+- Take an Outpost out on the map to bank and sometimes respawn there.
+- Events are team battles now, and the Core is the Mother Lode, a giant gem deposit in the middle. No Storm Circle in 2TDM.
+- Invite a friend to your team with the new button next to fullscreen, and press G to drop an enemy marker your team can see.
+- Hunted is now simply the #1 player on the leaderboard, in FFA too. In 2TDM each team hunts the other team's #1.
+- Save codes only restore in the mode you saved them in.
+- Spawn and vault shields now end once you actually drive off.
+- Regrowing rocks are tougher and drop their gems when you break them, and breaking rocks hits a lot harder.
+- Ranger no longer upgrades into Crosshair, Falcon-style tanks fire their main gun with right click, and Firefly is gone.
+- Bots score properly, move smoothly, and come help you when you're getting shot.
+
 # Update [2026-10-14] A more... brighter world
 - The whole game has a new look: bright rocks with bold outlines, a camo floor under the grid instead of dirt, and a softer purple storm. Dark mode on the home page now makes the game dark too. And light mode makes it light. Obviously :)
 - Tanks look like classic diep tanks, with brighter player colours, thicker outlines, and barrels that actually "kick" back when they fire. You no longer always spawn as blue.

@@ -403,17 +403,39 @@ function placeAt(body, tx, ty, range) {
     return { x: body.x + dir.x * d, y: body.y + dir.y * d, dir, d };
 }
 // Can a pad go down here? Open ground under it, not on a vault or shop pad.
-function padSpotOk(x, y) {
+function padSpotOk(x, y) { return !padSpotWhy(x, y); }
+function padSpotWhy(x, y) {
     const g = tg();
-    if (g && (g.rockHitByCircle(x, y, PLACE_CLEAR) || (g.growingRockHitByCircle && g.growingRockHitByCircle(x, y, PLACE_CLEAR, now())))) return false;
+    if (g && (g.rockHitByCircle(x, y, PLACE_CLEAR) || (g.growingRockHitByCircle && g.growingRockHitByCircle(x, y, PLACE_CLEAR, now())))) return 'rock';
+    if (padOnSite(x, y)) return 'site';
+    return null;
+}
+function padOnSite(x, y) {
+    const clear = PAD.radius + 12;
     try {
         const padGeom = require('./padGeom.js');
         const list = [];
         if (Config.dig_royale) { for (const v of require('./vault.js').getVaults() || []) list.push(v); }
         for (const sp of require('./shop.js').getShops() || []) list.push(sp);
-        for (const p of list) if (padGeom.insidePad(p, x, y, PLACE_CLEAR)) return false;
+        try { for (const o of require('./outposts.js').getOutposts() || []) if (o && Number.isFinite(o.x)) list.push(o); } catch { /* */ }
+        for (const p of list) if (p && padGeom.insidePad(p, x, y, clear)) return true;
     } catch { /* */ }
-    return true;
+    try {
+        if (require('./teamMode.js').isActive()) {
+            const L = require('./teamLayout.js');
+            if (L.baseAt(x, y, clear)) return true;
+            for (const t of L.TEAMS) {
+                const m = L.sitesFor(t).mouth;
+                if (m && (x - m.x) ** 2 + (y - m.y) ** 2 <= (L.YARD_R + clear) ** 2) return true;
+            }
+            for (const w of L.warPads()) if ((x - w.x) ** 2 + (y - w.y) ** 2 <= (w.r + clear) ** 2) return true;
+        }
+    } catch { /* */ }
+    return false;
+}
+const PAD_NO_REGROW_R = PAD.radius + 110;
+function padGone(p, t = now()) {
+    if (p && p.zone) p.zone.until = Math.min(p.zone.until, t);
 }
 
 // The cells a Barricade would raise at an aim spot, and the ones in its band
@@ -599,13 +621,17 @@ const USES = {
 
     pad(body, tx, ty) {
         const P = placeAt(body, tx, ty, AB_BY_ID.get('pad').place);
-        if (!padSpotOk(P.x, P.y)) return { ok: false, msg: "There's no room for a pad there. Aim at open ground." };
+        const why = padSpotWhy(P.x, P.y);
+        if (why === 'site') return { ok: false, msg: "Launch Pads can't go on vaults, shops, War Pads, Outposts or bases. Try open ground nearby." };
+        if (why) return { ok: false, msg: "There's no room for a pad there. Aim at open ground." };
         const t = now();
         const mine = pads.filter(p => p.owner === body);
-        while (mine.length >= PAD.perOwner) { const old = mine.shift(); pads.splice(pads.indexOf(old), 1); fx('padgone', old.x, old.y, 0, 0, old.id); }
+        while (mine.length >= PAD.perOwner) { const old = mine.shift(); pads.splice(pads.indexOf(old), 1); padGone(old, t); fx('padgone', old.x, old.y, 0, 0, old.id); }
         const id = (++padSeq) & 0x7fffffff;
         const ang = Math.atan2(P.dir.y, P.dir.x);
-        const pad = { id, x: P.x, y: P.y, ang, until: t + PAD.ms, armAt: t + PAD.armMs, owner: body, told: new Set(), toldAt: 0 };
+        const pad = { id, x: P.x, y: P.y, ang, until: t + PAD.ms, armAt: t + PAD.armMs, owner: body, told: new Set(), toldAt: 0, zone: null };
+        const g = tg();
+        if (g && g.addNoRegrowZone) { try { pad.zone = g.addNoRegrowZone(P.x, P.y, PAD_NO_REGROW_R, pad.until); } catch { /* */ } }
         pads.push(pad);
         announcePad(pad, t);
         return { ok: true };
@@ -1232,15 +1258,28 @@ function tickBody(body, t) {
     return more;
 }
 
+function bigBodies() {
+    const out = [];
+    try {
+        const ti = require('./titan.js');
+        for (const team of [-1, -2]) { const o = ti.aliveFor(team); if (o) out.push(o); }
+    } catch { /* */ }
+    try { const b = require('./bosses.js').current(); if (b) out.push(b); } catch { /* */ }
+    try { const c = require('./coreFinale.js').current(); if (c) out.push(c); } catch { /* */ }
+    return out;
+}
+
 function tickPads(t, actors) {
+    let big = null;
     for (let i = pads.length - 1; i >= 0; i--) {
         const p = pads[i];
-        if (t > p.until) { pads.splice(i, 1); continue; }
+        if (t > p.until) { padGone(p, t); pads.splice(i, 1); continue; }
         if (p.told && t - (p.toldAt || 0) >= 400) announcePad(p, t);
         if (t < p.armAt) continue;
-        for (const a of actors) {
+        if (!big) big = bigBodies();
+        for (const a of big.length ? actors.concat(big) : actors) {
             const b = a && a.body ? a.body : a;
-            if (!live(b) || b.royaleLobby || b.padSafe) continue;
+            if (!live(b) || b.royaleLobby || b.padSafe || b.isRoyaleProtector) continue;
             const rr = PAD.radius + radiusOf(b) * 0.5;
             if ((b.x - p.x) ** 2 + (b.y - p.y) ** 2 > rr * rr) continue;
             if (t - (b._padLaunchAt || 0) < PAD.againMs) continue;
@@ -1290,6 +1329,7 @@ function tick(actors) {
 
 // New raid: pads, walls and running effects go.
 function resetRaid() {
+    for (const p of pads) padGone(p);
     pads.length = 0;
     for (const w of walls) if (w.canyon && w.rock) w.rock.canyon = true;
     walls.length = 0;

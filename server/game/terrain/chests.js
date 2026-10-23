@@ -252,6 +252,7 @@ function pickCell(opts = {}) {
         if (st && st.active !== false && !global.royaleFinal90 && Math.hypot(x - (st.cx || 0), y - (st.cy || 0)) > (st.r || 1000) * 0.85) continue;
         if (tg.circleRadius && Math.hypot(x, y) > tg.circleRadius - 180) continue;
         if (padsBlocked(x, y, 300, pads)) continue;
+        if (Config.royale_teams && require('./teamLayout.js').baseAt(x, y, 900)) continue;
         if (coreSite && (x - coreSite.x) ** 2 + (y - coreSite.y) ** 2 < CORE_KEEP * CORE_KEEP) continue;
         if (chestNear(x, y)) continue;
         if (tanksNear(x, y, near ? 120 : 380, tankList)) continue;

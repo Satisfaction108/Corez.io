@@ -8,6 +8,19 @@ function on() {
 
 let hooks = {};
 function attach(h) { hooks = h || {}; }
+function teamsOn() { return !!(global.Config && Config.royale_teams); }
+const TEAM_KINDS = ['core', 'rush', 'boss', 'meteor'];
+const MOTHER_LODE = { name: 'Mother Lode', verb: 'Crack the giant gem deposit in the middle. The team that does the most damage wins the battle.' };
+function kindInfo(kind) {
+    const K = S.KINDS[kind];
+    if (teamsOn() && kind === 'core' && K) return Object.assign({}, K, MOTHER_LODE);
+    return K;
+}
+function teamRegions(list) {
+    if (!teamsOn()) return list;
+    const L = m('teamLayout');
+    return list.filter(r => L.TEAMS.every(t => { const c = L.baseCenter(t); return Math.hypot(r.x - c.x, r.y - c.y) > 1700; }));
+}
 function hook(name, ...a) {
     const f = hooks[name];
     if (typeof f !== 'function') return undefined;
@@ -352,7 +365,7 @@ const EVENTS = {
     },
     core: {
         plan(region) {
-            const v = nearestVault(region.x, region.y, st.lastVault) || { x: 0, y: 0, r: 95 };
+            const v = teamsOn() ? { x: 0, y: 0, r: 95 } : (nearestVault(region.x, region.y, st.lastVault) || { x: 0, y: 0, r: 95 });
             let ang = Math.atan2(region.y - v.y, region.x - v.x);
             if (Math.hypot(region.x - v.x, region.y - v.y) < 60) ang = Math.random() * Math.PI * 2;
             const off = m('coreFinale').CORE_OFFSET || 330;
@@ -475,7 +488,7 @@ const EVENTS = {
     },
     hill: {
         plan(region, sc) {
-            const v = nearestVault(region.x, region.y, st.lastVault) || { x: 0, y: 0, r: 95 };
+            const v = teamsOn() ? { x: 0, y: 0, r: 95 } : (nearestVault(region.x, region.y, st.lastVault) || { x: 0, y: 0, r: 95 });
             const padR = (v.r || 95) * ((m('padGeom').OCT || {}).scale || 1.4);
             return { x: v.x, y: v.y, r: Math.round(padR + sc.hillR), vault: { x: v.x, y: v.y, r: v.r }, padR: Math.round(padR) };
         },
@@ -539,8 +552,9 @@ const EVENTS = {
 const FIRST_MS = () => S.envMs('ROYALE_AO_FIRST_MS', S.FIRST_MS);
 
 function planNext(t, startAt, forceKind) {
-    const kind = forceKind && EVENTS[forceKind] ? forceKind : S.pickKind(st.history, rng);
-    const region = S.pickRegion(S.regions(mapR()), st.lastRegion, rng, mapR());
+    const kind = forceKind && EVENTS[forceKind] ? forceKind : (teamsOn() ? S.pickKind(st.history, rng, TEAM_KINDS) : S.pickKind(st.history, rng));
+    const region = teamsOn() && kind === 'core' ? { id: 8, x: 0, y: 0, name: 'the Centre' }
+        : S.pickRegion(teamRegions(S.regions(mapR())), st.lastRegion, rng, mapR());
     const sc = scale();
     let spot = null;
     try { spot = EVENTS[kind].plan(region, sc); } catch (e) { logErr('plan ' + kind, e); }
@@ -563,7 +577,7 @@ function announce(t) {
             n.x = Math.round(p.x); n.y = Math.round(p.y);
         } catch (e) { logErr('rush refine', e); }
     }
-    const K = S.KINDS[n.kind];
+    const K = kindInfo(n.kind);
     const secs = Math.max(1, Math.round((n.startAt - t) / 1000));
     hook('toast', K.name + " starts in " + secs + " seconds in " + n.where + ". " + K.verb, 7000);
     hook('feed', { ao: 1, soon: 1, k: n.kind, n: K.name, w: n.where });
@@ -574,7 +588,7 @@ function startEvent(t) {
     const n = st.next;
     if (!n) return null;
     st.next = null;
-    const K = S.KINDS[n.kind];
+    const K = kindInfo(n.kind);
     const ev = {
         id: ++st.seq, kind: n.kind, name: K.name, where: n.where, x: n.x, y: n.y, r: n.r, vault: n.vault, padR: n.padR,
         region: n.region, startAt: t, ms: K.ms, until: t + K.ms, scores: new Map(), data: {},
@@ -730,7 +744,7 @@ function snapshot(t = Date.now()) {
         ft,
     };
     if (n) {
-        out.nx = { k: n.kind, n: S.KINDS[n.kind].name, w: n.where, in: Math.max(0, n.startAt - t), a: n.announced ? 1 : 0 };
+        out.nx = { k: n.kind, n: kindInfo(n.kind).name, w: n.where, in: Math.max(0, n.startAt - t), a: n.announced ? 1 : 0 };
         if (n.announced) { out.nx.x = n.x; out.nx.y = n.y; out.nx.r = n.r; if (n.padR) out.nx.pr = n.padR; }
     }
     if (ev) {
@@ -768,7 +782,7 @@ function youFields(key, t = Date.now()) {
 function deathText(t = Date.now()) {
     const ev = st.cur, n = st.next;
     if (ev) return ev.name + " is on in " + ev.where + " for " + fmtClock(ev.until - t) + ".";
-    if (n) return "Next event in " + fmtClock(n.startAt - t) + ": " + S.KINDS[n.kind].name + " in " + n.where + ".";
+    if (n) return "Next event in " + fmtClock(n.startAt - t) + ": " + kindInfo(n.kind).name + " in " + n.where + ".";
     return "";
 }
 

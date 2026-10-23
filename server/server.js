@@ -289,6 +289,19 @@ function sendStatic(res, file, req) {
         const etag = '"' + st.size.toString(36) + "-" + Math.floor(st.mtimeMs).toString(36) + '"';
         const headers = { "Content-Type": type, "Cache-Control": MEDIA.has(extension) ? "public, max-age=3600" : "no-cache", "ETag": etag };
         if (notModified(req, etag)) { res.writeHead(304, headers); res.end(); return; }
+        headers["Accept-Ranges"] = "bytes";
+        const range = extension === "mp4" && req && req.headers && /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || ""));
+        if (range && (range[1] || range[2])) {
+            let start = range[1] ? parseInt(range[1], 10) : Math.max(0, st.size - parseInt(range[2], 10));
+            let end = range[1] && range[2] ? Math.min(st.size - 1, parseInt(range[2], 10)) : st.size - 1;
+            if (!(start <= end) || start >= st.size) { res.writeHead(416, { "Content-Range": "bytes */" + st.size }); res.end(); return; }
+            headers["Content-Range"] = "bytes " + start + "-" + end + "/" + st.size;
+            headers["Content-Length"] = end - start + 1;
+            res.writeHead(206, headers);
+            if (req.method === "HEAD") return res.end();
+            fs.createReadStream(file, { start, end }).on("error", () => res.destroy()).pipe(res);
+            return;
+        }
         headers["Content-Length"] = st.size;
         res.writeHead(200, headers);
         if (req && req.method === "HEAD") return res.end();
@@ -441,6 +454,7 @@ server = http.createServer((req, res) => {
                     region: server.region || (cfg && cfg.region) || "",
                     gameMode: server.gameMode,
                     mode,
+                    royaleMode: cfg && Array.isArray(cfg.gamemode) && cfg.gamemode.includes('dig_royale') ? require('./game/terrain/modeRotation.js').peekMode() : undefined,
                 };
             }));
         } break;

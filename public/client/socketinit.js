@@ -8,6 +8,7 @@ import * as rankCeremony from "./account/rankCeremony.js";
 import * as dustHud from "./account/dustHud.js";
 import * as raidFinale from "./raidFinale.js";
 import * as raidHeat from "./raidHeat.js";
+import * as teamWar from "./teamWar.js";
 import * as crowns from "./crowns.js";
 import * as juice from "./juice.js";
 import * as hitFx from "./hitFx.js";
@@ -1193,6 +1194,36 @@ const guestId = (() => {
 function firstSource() {
     try { return localStorage.getItem("dwSrc") || ""; } catch (e) { return ""; }
 }
+const TEAM_JOIN_KEY = "dwTeamJoin";
+const TEAM_CODE_RE = /^[A-Za-z0-9]{6}$/;
+let teamJoinCode = (() => {
+    let code = "";
+    try {
+        const params = new URLSearchParams(location.search);
+        if (params.has("team")) {
+            const fromUrl = String(params.get("team") || "").trim();
+            if (TEAM_CODE_RE.test(fromUrl)) code = fromUrl;
+            params.delete("team");
+            const rest = params.toString();
+            history.replaceState(history.state, "", location.pathname + (rest ? "?" + rest : "") + location.hash);
+        }
+    } catch (e) { void e; }
+    try {
+        if (code) sessionStorage.setItem(TEAM_JOIN_KEY, code);
+        else {
+            const kept = sessionStorage.getItem(TEAM_JOIN_KEY) || "";
+            if (TEAM_CODE_RE.test(kept)) code = kept;
+        }
+    } catch (e) { void e; }
+    return code;
+})();
+function sendTeamJoin(s) {
+    if (!teamJoinCode || !s || !s.open) return;
+    const code = teamJoinCode;
+    teamJoinCode = "";
+    try { sessionStorage.removeItem(TEAM_JOIN_KEY); } catch (e) { void e; }
+    s.talk('TJ', code);
+}
 const RECONNECT_TRIES = 8;
 // Removed for idling (IK, or the close code 4001 if IK got lost): straight
 // back to the menu with the reason, and no reconnect, since the server keeps
@@ -1244,6 +1275,7 @@ let incoming = async function(message, socket) {
                     // a fresh socket starts out visible on the server
                     tabStateSent = 0;
                     if (document.hidden) tellTabState(1);
+                    sendTeamJoin(socket);
                     socket.talk('s', "", 1, 0, false, 0);
                 }
             }; break;
@@ -1283,7 +1315,9 @@ let incoming = async function(message, socket) {
                 global.digRoyaleMode = m[9] === 1;
                 try { global.shops = m[10] ? JSON.parse(m[10]) : []; } catch (e) { global.shops = []; }
                 // m[11]: the map's rock biome seed (0 or missing = plain rock)
-                if (window.terrainRenderer) window.terrainRenderer.init(cells, cols, rows, rockState, oreState, oreSalt, m[11] | 0);
+                global.teamTerrain = (m[12] | 0) === 1;
+                if (window.terrainRenderer) window.terrainRenderer.init(cells, cols, rows, rockState, oreState, oreSalt, m[11] | 0, global.teamTerrain);
+                global.terrainAt = performance.now();
             } break;
             case 'TUTI': {
                 // Tutorial only: the landmarks of this learner's private plot.
@@ -1318,6 +1352,13 @@ let incoming = async function(message, socket) {
             case 'OU': {
                 global.vault.onPad = !!m[0];
                 global.vault.isOutpost = !!m[0];
+            } break;
+            case 'TI': {
+                teamWar.onInviteCode(m[0]);
+            } break;
+            case 'TJ': {
+                const text = String(m[1] || '');
+                if (text) global.createMessage(text, m[0] ? 4500 : 6000);
             } break;
             case 'EP': {
                 const by = m[2];
@@ -1464,6 +1505,9 @@ let incoming = async function(message, socket) {
                     r.abd = d.abd || null;
                     r.ao = d.ao || null;
                     r.aoStorm = d.aoStorm || null;
+                    r.tw = d.tw || null;
+                    r.twy = d.twy || null;
+                    try { teamWar.onRY(r); } catch (e) { void e; }
                     {
                         const aoW = !!((d.ao && d.ao.on) || d.aom);
                         if (global.aoWorld !== aoW) { global.aoWorld = aoW; try { localStorage.setItem("dwAoWorld", aoW ? "1" : "0"); } catch (e) { void e; } }
@@ -1830,12 +1874,14 @@ let incoming = async function(message, socket) {
                     g.lastPickup = now;
                     if (config.game.gemSounds) gameSound.gemPickup(g.combo);
                     const last = g.popups[g.popups.length - 1];
-                    if (last && now - last.born < 450) {
+                    let gemCol = null;
+                    try { gemCol = global.gemHueNear ? global.gemHueNear() : null; } catch (e) { gemCol = null; }
+                    if (last && now - last.born < 450 && (last.col || null) === gemCol) {
                         last.value += delta;
                         last.born = now;
                         last.combo = g.combo;
                     } else {
-                        g.popups.push({ value: delta, born: now, combo: g.combo,
+                        g.popups.push({ value: delta, born: now, combo: g.combo, col: gemCol,
                                         drift: (Math.random() - 0.5) * 26 });
                         if (g.popups.length > 6) g.popups.shift();
                     }
@@ -2111,6 +2157,7 @@ let incoming = async function(message, socket) {
                 // old (spectate) spot to the tank instead of cutting to it
                 global.player.animX.add(m[0]); global.player.animX.add(m[0]);
                 global.player.animY.add(m[1]); global.player.animY.add(m[1]);
+                if (m[2] > 0 && isFinite(m[2])) { global.player.animv.add(m[2]); global.player.animv.add(m[2]); }
                 netSmooth.camCut(m[0], m[1]);
             } break;
             case 'S': {
@@ -2161,6 +2208,7 @@ let incoming = async function(message, socket) {
                     util.pullTotalPlayers();
                     global.gameUpdate = true;
 
+                    sendTeamJoin(socket);
                     socket.talk('s', global.playerName, 0, 1 * config.game.autoLevelUp, global.bodyID ? global.bodyID : false, 1 * config.game.incognitoMode);
                     global.bodyID = undefined;
                     // Queue only on the initial join, not on mid-game resyncs.
@@ -2401,7 +2449,7 @@ let incoming = async function(message, socket) {
                     dcause === "raidend" ? "The raid ended"
                     : dcause === "rock" ? "Crushed by the living rock"
                     : dcause === "storm" ? "Lost in the storm"
-                    : dcause === "base" ? "Shot by the enemy base"
+                    : dcause === "base" ? teamWar.baseDeathText("Shot by the enemy base")
                     : global.finalKillers.length ? ("Killed by " + global.finalKillers.join(" and "))
                     : "You died",
                     5000);

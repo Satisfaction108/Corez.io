@@ -1,41 +1,28 @@
-function aoWorld() { try { return require('./alwaysOn.js').on(); } catch { return false; } }
-// Carriers get hunted. A tank hauling a lot of unbanked gems shows up on
-// every minimap; the biggest haul in the raid is the TOP TARGET. Whoever
-// takes a hunted tank down cashes a bounty on top of the gems it drops.
-// Banking (or spending) back under the line takes the mark off.
-//
-//   level 1  HUNTED      carrying HUNTED_AT or more (stays on down to HUNTED_OFF)
-//   level 2  TOP TARGET  the single biggest carrier, at TOP_AT or more
-//
-// body.huntedLevel is the shared state (bots read it too). Levels are worked
-// out every EVERY_MS, not every tick. A brand new player (botNewbie) is left
-// alone until they have banked once this raid (bots read the mark, so this only
-//
-// ROYALE_HUNTED=0 turns the whole thing off.
 'use strict';
 
 const ON = process.env.ROYALE_HUNTED !== '0';
-const HUNTED_AT = 1500;
-const HUNTED_OFF = 1200;
-const TOP_AT = 2500;
-const TOP_LEAD = 150;          // a new top target has to pass the old one by this much
+const HUNTED_AT = 500;
+const HUNTED_OFF = 500;
+const TOP_AT = 500;
+const TOP_LEAD = 150;
 const EVERY_MS = 500;
-const HUNTER_R = 1500;         // enemies this close count as hunters
-// bounty: a share of what they carried, paid by the raid (not out of the drop)
-const BOUNTY = { 1: { frac: 0.15, pts: 150 }, 2: { frac: 0.2, pts: 300 } };
+const HUNTER_R = 1500;
+const BOUNTY = { 1: { frac: 0.15, pts: 250 }, 2: { frac: 0.2, pts: 350 } };
 const BOUNTY_MAX = 800;
 const TOP_FEED_GAP_MS = 30_000;
 
 let lastAt = 0;
 let top = null;
+const tops = new Map();
 let list = [];
 let epoch = 1;
 let hooks = {};
 
-// dig_royale.js: callout(body, kind, text, pts, sub, dur), feed(entry)
 function attach(h) { hooks = h || {}; }
 
 const alive = (b) => !!b && !b.isGhost && !(b.isDead && b.isDead());
+function teamsOn() { return typeof Config !== 'undefined' && !!Config.royale_teams; }
+const isTeam = (t) => t === -1 || t === -2;
 
 function bankedThisRaid(body) {
     const holder = body.socket || body;
@@ -45,7 +32,6 @@ function onBanked(body) {
     if (!body) return;
     (body.socket || body)._huntBankEpoch = epoch;
 }
-// newbie window: a fully new player is not marked until their first bank
 function exempt(body) {
     return !!(body.socket && body.botNewbie && !bankedThisRaid(body));
 }
@@ -56,18 +42,21 @@ function sameSide(a, b) {
     return a.team != null && a.team === b.team;
 }
 
-function levelFor(carried, prev) {
-    if (carried >= HUNTED_AT) return 1;
-    if (prev > 0 && carried >= HUNTED_OFF) return 1;
+function levelFor(score, prev) {
+    if (score >= HUNTED_AT) return 1;
+    if (prev > 0 && score >= HUNTED_OFF) return 1;
     return 0;
 }
 
-function pickTop(cands) {
-    let best = null;
-    for (const b of cands) if (!best || (b.carriedGems | 0) > (best.carriedGems | 0)) best = b;
-    if (!best) return null;
-    // the current top keeps it until someone clearly passes them
-    if (top && top !== best && cands.includes(top) && (best.carriedGems | 0) - (top.carriedGems | 0) < TOP_LEAD) return top;
+function scoreOf(b) {
+    try { return hooks.scoreOf ? (hooks.scoreOf(b) | 0) : 0; } catch { return 0; }
+}
+
+function pickTop(cands, holder) {
+    let best = null, bestS = -1;
+    for (const b of cands) { const v = scoreOf(b); if (v > bestS) { bestS = v; best = b; } }
+    if (!best || bestS < TOP_AT) return null;
+    if (holder && holder !== best && cands.includes(holder) && bestS - scoreOf(holder) < TOP_LEAD) return holder;
     return best;
 }
 
@@ -78,18 +67,16 @@ function say(body, kind, text, sub, dur) {
 
 function onChange(body, prev, next, t) {
     if (next > prev) {
-        if (next === 2) {
-            say(body, 'toptarget', "TOP TARGET", aoWorld() ? "You have the biggest haul on the map, so everyone's after you." : "You have the biggest haul in the raid, so everyone's after you.", 3200);
-            if (hooks.feed && t - (body._huntFeedAt || 0) > TOP_FEED_GAP_MS) {
-                body._huntFeedAt = t;
-                try { hooks.feed({ hunt: 1, name: body.name || "Someone", g: body.carriedGems | 0 }); } catch { /* */ }
-            }
-        } else if (prev === 0) {
-            say(body, 'hunted', "YOU'RE HUNTED", "Everyone can see you on the map. Bank your gems or fight!", 3000);
+        const sub = teamsOn() && isTeam(body.team)
+            ? "You're your team's #1, so the other team can see you on the map."
+            : "You're #1 on the leaderboard, so everyone can see you on the map.";
+        say(body, 'toptarget', "YOU'RE HUNTED", sub, 3200);
+        if (hooks.feed && t - (body._huntFeedAt || 0) > TOP_FEED_GAP_MS) {
+            body._huntFeedAt = t;
+            try { hooks.feed({ hunt: 1, name: body.name || "Someone", g: body.carriedGems | 0 }); } catch { /* */ }
         }
     } else if (next === 0 && prev > 0) {
-        const banking = !!(body.vaultDeposit || body.vaultOnPad || body.outpostDeposit);
-        say(body, 'safe', "SAFE", banking ? "You banked, so the hunt is off." : "You're off the map.", 1800);
+        say(body, 'safe', "SAFE", "Someone passed you on the leaderboard, so the hunt is off.", 1800);
     }
 }
 
@@ -97,25 +84,34 @@ function tick(t, fighters) {
     if (!ON || t - lastAt < EVERY_MS) return;
     lastAt = t;
     const live = [];
-    const cands = [];
+    const groups = new Map();
+    const teams = teamsOn();
     for (const b of fighters || []) {
         if (!alive(b) || b.royaleFrozen) { if (b) b.huntedLevel = 0; continue; }
-        const lvl = exempt(b) ? 0 : levelFor(b.carriedGems | 0, b.huntedLevel | 0);
-        b._huntBase = lvl;
         live.push(b);
-        if (lvl && (b.carriedGems | 0) >= (b === top ? TOP_AT - TOP_LEAD : TOP_AT)) cands.push(b);
+        if (exempt(b)) continue;
+        const g = teams && isTeam(b.team) ? b.team : 'all';
+        let arr = groups.get(g);
+        if (!arr) groups.set(g, arr = []);
+        arr.push(b);
     }
-    top = pickTop(cands);
+    const marked = new Set();
+    for (const [g, cands] of groups) {
+        const holder = pickTop(cands, tops.get(g));
+        if (holder) { tops.set(g, holder); marked.add(holder); } else tops.delete(g);
+    }
+    for (const g of [...tops.keys()]) if (!groups.has(g)) tops.delete(g);
+    top = tops.get('all') || null;
     list = [];
     for (const b of live) {
         const prev = b.huntedLevel | 0;
-        const next = b._huntBase ? (b === top ? 2 : 1) : 0;
+        const next = marked.has(b) ? 2 : 0;
         b.huntedLevel = next;
         if (next !== prev) onChange(b, prev, next, t);
         if (!next) { b._huntersNear = 0; continue; }
         let n = 0;
         for (const o of live) {
-            if (sameSide(o, b) || o.isRoyaleBoss) continue;
+            if (sameSide(o, b) || o.isRoyaleBoss || o.isTitan) continue;
             const dx = o.x - b.x, dy = o.y - b.y;
             if (dx * dx + dy * dy <= HUNTER_R * HUNTER_R) n++;
         }
@@ -124,8 +120,6 @@ function tick(t, fighters) {
     }
 }
 
-// RY: everyone's map. g is the haul rounded down to 10, tm the team (the
-// client leaves its own team out).
 function seenAt(b) { try { return require('./abilities.js').shownAt(b); } catch { return b; } }
 function snapshot() {
     if (!ON) return undefined;
@@ -152,6 +146,7 @@ function onKill(killer, victim, carried, level = victim && victim.huntedLevel) {
     const l = level | 0;
     victim.huntedLevel = 0;
     if (top === victim) top = null;
+    for (const [g, b] of tops) if (b === victim) tops.delete(g);
     if (!l || !killer || killer === victim || sameSide(killer, victim)) return null;
     const b = BOUNTY[l] || BOUNTY[1];
     const gems = Math.min(BOUNTY_MAX, Math.round((Math.max(0, carried | 0) * b.frac) / 5) * 5);
@@ -163,11 +158,13 @@ function onDeath(body) {
     body.huntedLevel = 0;
     body._huntersNear = 0;
     if (top === body) top = null;
+    for (const [g, b] of tops) if (b === body) tops.delete(g);
 }
 
 function reset() {
     lastAt = 0;
     top = null;
+    tops.clear();
     for (const b of list) if (b) { b.huntedLevel = 0; b._huntersNear = 0; }
     list = [];
     epoch++;
@@ -175,8 +172,9 @@ function reset() {
 
 function current() { return list.filter(b => alive(b) && b.huntedLevel); }
 function topTarget() { return alive(top) && top.huntedLevel === 2 ? top : null; }
+function topOf(team) { const b = tops.get(team); return alive(b) && b.huntedLevel === 2 ? b : null; }
 
 module.exports = {
     ON, HUNTED_AT, HUNTED_OFF, TOP_AT, TOP_LEAD, EVERY_MS, HUNTER_R, BOUNTY, BOUNTY_MAX,
-    attach, tick, snapshot, forClient, onKill, onDeath, onBanked, bankedThisRaid, reset, current, topTarget, levelFor,
+    attach, tick, snapshot, forClient, onKill, onDeath, onBanked, bankedThisRaid, reset, current, topTarget, topOf, levelFor,
 };

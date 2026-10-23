@@ -34,6 +34,7 @@ const SHOPS = OUTPOSTS.filter(o => o.shop).map((o, i) => ({
 // (mapScale.area), so a spawn is never farther from a ready-made gap
 const SPAWN_PITS_REF = 48;
 const mapScale = require('./mapScale.js');
+const TeamLayout = require('./teamLayout.js');
 const OpenLayout = require('./openLayout.js');
 const VAULT_R = 115;
 const OUTPOST_R = 135;
@@ -119,8 +120,23 @@ function touchesOpen(grid, rock) {
     return false;
 }
 
+const teamsOn = () => typeof Config !== 'undefined' && !!Config.royale_teams && !Config.tutorial;
+
 function openLayoutPois(grid, circleR, o) {
     const pois = [];
+    if (teamsOn()) {
+        for (const v of grid.vaultSites || []) {
+            const centre = v.x === 0 && v.y === 0;
+            pois.push({ kind: 'vault', x: v.x, y: v.y, r: centre ? o.center_plaza : o.vault_plaza, pad: centre ? CENTER_CLEAR_R + 110 : VAULT_R + 145 });
+        }
+        for (const s of grid.shopSites || []) pois.push({ kind: 'shop', x: s.x, y: s.y, r: o.shop_plaza });
+        for (const t of TeamLayout.TEAMS) {
+            const st = TeamLayout.sitesFor(t);
+            pois.push({ kind: 'bank', x: st.mouth.x, y: st.mouth.y, r: o.bank_plaza });
+            pois.push({ kind: 'bank', x: st.pad.x, y: st.pad.y, r: o.shop_plaza });
+        }
+        return pois;
+    }
     for (const v of grid.vaultSites || []) {
         const centre = v.x === 0 && v.y === 0;
         pois.push({ kind: 'vault', x: v.x, y: v.y, r: centre ? o.center_plaza : o.vault_plaza, pad: centre ? CENTER_CLEAR_R + 110 : VAULT_R + 145 });
@@ -146,6 +162,65 @@ function carveOpenLayout(grid, circleR, canyonKeys, cfg) {
     if (o.ore_share > 0) grid.oreShare = o.ore_share;
     grid.openLayout = { cells: res.cells, open: res.open, forced: res.forced, pillars: res.pillars, links: res.links };
     return res;
+}
+
+function rockAt(grid, buckets, x, y, maxD) {
+    const B = 140;
+    const bx = Math.floor(x / B), by = Math.floor(y / B);
+    let best = null, bd = maxD * maxD;
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+        const list = buckets.get((bx + i) + ',' + (by + j));
+        if (!list) continue;
+        for (const r of list) {
+            const dx = (r.worldCx || r.wx) - x, dy = (r.worldCy || r.wy) - y, d = dx * dx + dy * dy;
+            if (d < bd) { bd = d; best = r; }
+        }
+    }
+    return best;
+}
+
+function symmetrize(grid, canyonKeys) {
+    const B = 140;
+    const buckets = new Map();
+    for (const r of grid.rocks.values()) {
+        const x = r.worldCx || r.wx, y = r.worldCy || r.wy;
+        const k = Math.floor(x / B) + ',' + Math.floor(y / B);
+        let list = buckets.get(k);
+        if (!list) buckets.set(k, list = []);
+        list.push(r);
+    }
+    const done = new Set();
+    const rim = (grid.circleRadius || 4200) - 320;
+    for (const a of grid.rocks.values()) {
+        const x = a.worldCx || a.wx, y = a.worldCy || a.wy;
+        if (!(y < 0 || (y === 0 && x < 0)) || done.has(a)) continue;
+        if (x * x + y * y > rim * rim) continue;
+        const b = rockAt(grid, buckets, -x, -y, 100);
+        if (!b || b === a || done.has(b)) continue;
+        done.add(a); done.add(b);
+        if (a.alive && !b.alive) { killRock(a, canyonKeys); continue; }
+        if (b.alive && !a.alive) { killRock(b, canyonKeys); continue; }
+        if (!a.alive) continue;
+        if (canyonKeys.has(a.k) || canyonKeys.has(b.k)) continue;
+        b.ore = a.ore;
+        b.maxHealth = grid.plainRockHealth * (ORE_HP[b.ore] || 1) * rockTough(b, b.ore);
+        b.health = b.maxHealth;
+        if (b.ore) { try { b.deposits = grid._buildDeposits(b); } catch { b.deposits = null; } }
+        else b.deposits = null;
+    }
+}
+
+function carveTeamZones(grid, canyonKeys) {
+    const zones = TeamLayout.clearZones();
+    for (const rock of grid.rocks.values()) {
+        if (!rock.alive) continue;
+        const x = rock.worldCx || rock.wx, y = rock.worldCy || rock.wy;
+        if (TeamLayout.inClearZone(x, y, zones)) { killRock(rock, canyonKeys); continue; }
+        if (!rock.worldPoly) continue;
+        for (const p of rock.worldPoly) {
+            if (TeamLayout.inClearZone(p[0], p[1], zones)) { killRock(rock, canyonKeys); break; }
+        }
+    }
 }
 
 // Deterministic 0..1 roll so ore splits evenly across the disk.
@@ -239,11 +314,13 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
 
     // Sites are recorded now, and their holes are carved before open_layout
     // plans plazas/corridors and before spawnPits are sampled.
-    grid.vaultSites = VAULTS.map((v, i) => {
+    const teams = teamsOn();
+    grid.teamMode = teams;
+    grid.vaultSites = teams ? TeamLayout.vaultSites() : VAULTS.map((v, i) => {
         const x = v.x * circleR, y = v.y * circleR;
         return { id: i, name: v.name, x, y, r: 95, team: 0, rainbow: true };
     });
-    grid.shopSites = SHOPS.map(s => ({
+    grid.shopSites = teams ? TeamLayout.shopSites() : SHOPS.map(s => ({
         id: s.id,
         name: s.name,
         x: Math.cos(s.ang) * s.dist * circleR,
@@ -251,6 +328,7 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
         r: 95,
         color: s.color,
     }));
+    if (teams) carveTeamZones(grid, canyonKeys);
     carveDisk(grid, 0, 0, CENTER_CLEAR_R, canyonKeys);
     for (const v of grid.vaultSites) {
         if (v.x !== 0 || v.y !== 0) carveDisk(grid, v.x, v.y, VAULT_R, canyonKeys);
@@ -259,7 +337,7 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
 
     chamberCells.length = 0;
     outpostCells.length = 0;
-    for (const spec of OUTPOSTS) {
+    for (const spec of teams ? [] : OUTPOSTS) {
         const x = Math.cos(spec.ang) * spec.dist * circleR;
         const y = Math.sin(spec.ang) * spec.dist * circleR;
         carveDisk(grid, x, y, OUTPOST_R, canyonKeys);
@@ -326,10 +404,18 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
         }
     } catch { /* emeralds stay as rolled */ }
 
+    if (teams) { carveTeamZones(grid, canyonKeys); symmetrize(grid, canyonKeys); }
+
     const blocked = [];
     for (const v of grid.vaultSites) blocked.push({ x: v.x, y: v.y, r: 380 });
     for (const s of grid.shopSites) blocked.push({ x: s.x, y: s.y, r: 340 });
-    for (const o of OUTPOSTS) {
+    if (teams) for (const t of TeamLayout.TEAMS) {
+        const c = TeamLayout.baseCenter(t);
+        blocked.push({ x: c.x, y: c.y, r: 1500 });
+        const st = TeamLayout.sitesFor(t);
+        blocked.push({ x: st.mouth.x, y: st.mouth.y, r: 900 });
+    }
+    for (const o of teams ? [] : OUTPOSTS) {
         blocked.push({
             x: Math.cos(o.ang) * o.dist * circleR,
             y: Math.sin(o.ang) * o.dist * circleR,

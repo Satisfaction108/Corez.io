@@ -9,7 +9,7 @@ const born = new Float64Array(CAP), life = new Float32Array(CAP), sz = new Float
 const col = new Uint8Array(CAP);
 let head = 0, live = 0;
 // 0 plain rock, then the ore tiers (copper .. diamond)
-export const COLS = ["#c8b79c", "#e0864a", "#dfe4ec", "#f2c94c", "#3fcf7a", "#ff5a6a", "#8fe8ff"];
+export const COLS = ["#c8b79c", "#e0864a", "#5896ec", "#be5cdc", "#3fcf7a", "#ff5a6a", "#8fe8ff"];
 
 const easeOut = (k) => 1 - (1 - k) * (1 - k);
 function count(ore) {

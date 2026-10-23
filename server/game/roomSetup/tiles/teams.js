@@ -12,7 +12,7 @@ teamCheck = (tile, team) => {
         // vaporize it (outer wall rocks overlap the base apron, so their
         // gems would die the same tick they spawn)
         if (entity.isGemPickup) continue;
-        if (entity.team !== team && !entity.ac && !entity.master.master.ac && !entity.isArenaCloser && !entity.master.master.isArenaCloser) {
+        if (entity.team !== team && !entity.ac && !entity.master.master.ac && !entity.isArenaCloser && !entity.master.master.isArenaCloser && !entity.baseImmune && !entity.master.master.baseImmune) {
             // Straight kill() by the tile: no damage, no bullet, nobody in the
             // killers list. Tag it first so the death screen can say what
             // happened instead of "nobody finished you off".
@@ -153,3 +153,20 @@ tileClass.baseprotected8 = new Tile({
     },
     TICK: tile => teamCheck(tile, TEAM_CYAN)
 })
+
+const royaleTeamsOn = () => !!(global.Config && Config.royale_teams);
+const royaleBaseTile = (team, guarded) => new Tile({
+    COLOR: team === TEAM_BLUE ? "blue" : "red",
+    NAME: "Royale Base " + (team === TEAM_BLUE ? "Blue" : "Red") + (guarded ? " Guarded" : ""),
+    VISIBLE_FROM_BLACKOUT: true,
+    DATA: { team, guarded },
+    INIT: (tile, room) => {
+        teamRoomCheck(tile, team, room);
+        if (!royaleTeamsOn()) tile.color = "white";
+    },
+    TICK: tile => { if (royaleTeamsOn()) teamCheck(tile, team); }
+});
+tileClass.royaleBase1 = royaleBaseTile(TEAM_BLUE, false);
+tileClass.royaleBaseGuarded1 = royaleBaseTile(TEAM_BLUE, true);
+tileClass.royaleBase2 = royaleBaseTile(TEAM_RED, false);
+tileClass.royaleBaseGuarded2 = royaleBaseTile(TEAM_RED, true);

@@ -158,6 +158,23 @@ export function invite(iv, handlers) {
 }
 export function inviteGone(id) { removeKey('iv:' + id); }
 
+export function teamInvite(iv, onJoin) {
+    if (!inGame() || !iv || !iv.key) return false;
+    const key = 'ti:' + iv.key;
+    const answer = (yes) => { removeKey(key); if (yes) onJoin(); };
+    const c = card(key, {
+        kind: 'invite', tag: '2TDM', title: clip(iv.name, 16) + ' invited you',
+        sub: 'Join their team in 2TDM.',
+        buttons: [
+            { label: 'Join', primary: true, onClick: () => answer(true) },
+            { label: 'Not now', onClick: () => answer(false) },
+        ],
+    });
+    arm(c, Math.max(3000, Math.min(60000, iv.ms | 0)));
+    beep(key, 'invite');
+    return true;
+}
+
 // a plain card: "You're teamed up with Sam" [Leave raid]
 export function note(key, title, opts = {}) {
     if (!inGame()) return;

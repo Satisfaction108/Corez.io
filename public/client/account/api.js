@@ -122,6 +122,7 @@ export const quests = () => get('/api/quests');
 // achievements for an account, or this browser's guest id (POST: never in a URL)
 export const achievements = (guestId) => post('/api/achievements', guestId ? { guestId } : {});
 export const invite = () => get('/api/invite');
+export const teamInvite = (userId, code) => post('/api/team/invite', { userId, code });
 // The daily rewards track and push pings (guests send their browser's guest
 // id in the body, never in the URL).
 export const daily = (guestId) => post('/api/daily', guestId ? { guestId } : {});

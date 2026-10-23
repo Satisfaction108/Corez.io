@@ -30,7 +30,8 @@ const REGROW = {
     RISE_MS,
     RISE_RATE: GROW_TIMELINE_MS / RISE_MS,
     START_SCALE:          0.15, 
-    HP_FLOOR:             0.25, 
+    HP_FLOOR:             0.60, 
+    GROW_GEM_FLOOR:       0.35, 
 
     HEAL_IDLE_MS:       30_000, 
     HEAL_RATE:           0.008, 
@@ -1113,6 +1114,7 @@ class TerrainGrid {
         // nothing may grow rock there
         if (rock.chestLock || rock._chestHolds > 0) return false;
         rock.gen++;
+        rock._chipPaid = 0; rock._chipAcc = 0;
         rock.growing    = true;
         rock.growFast   = !!(opts && opts.fast);
         rock.growRate   = rock.growFast ? ((opts && opts.rate) || REGROW.FAST_RATE) : REGROW.RISE_RATE;
@@ -1237,7 +1239,7 @@ class TerrainGrid {
             if (this.riseElapsed(rock, now) >= REGROW.GROW_MS) { this.completeRegrow(rock); continue; }
 
             const target = rock.maxHealth *
-                Math.max(REGROW.HP_FLOOR, easeGrowth(this.growthProgress(rock, now)));
+                (REGROW.HP_FLOOR + (1 - REGROW.HP_FLOOR) * easeGrowth(this.growthProgress(rock, now)));
             rock.health = Math.max(1, target - rock.growDamage);
         }
 
@@ -1565,6 +1567,7 @@ class TerrainGrid {
         }
 
         const wasGrowing = rock.growing;
+        const grownFrac = wasGrowing ? this.growthProgress(rock, Date.now()) : 1;
         if (wasGrowing) rock.growDamage += dmg;
         rock.lastHitAt = Date.now();   
         rock.health -= dmg;
@@ -1581,12 +1584,17 @@ class TerrainGrid {
                 this._pendingEmeralds.push({ at: rock.diedAt + ((global.royaleMods && global.royaleMods.emeraldRespawnMs) || REGROW.EMERALD_RESPAWN_MS) });
             // achievements (accounts/game/achHooks.js): a player broke it
             if (!wasGrowing && owner && owner.socket && global.royaleAch) global.royaleAch.onRock(owner, rock);
+            if (wasGrowing && rock.ore && breaker && (Config.dig_royale || Config.dig_wars)) {
+                const scale = REGROW.GROW_GEM_FLOOR + (1 - REGROW.GROW_GEM_FLOOR) * grownFrac;
+                try { require('./gems.js').spawnOreBurst(rock, breaker, scale); } catch { }
+            }
+            if (!breaker || wasGrowing) { rock._chipPaid = 0; rock._chipAcc = 0; }
         }
         const ev = { k: rock.k, h: rock.health / rock.maxHealth, d: destroyed ? 1 : 0 };
         // g: hull scraping, clients draw soft grind sparks
         if (grind && !destroyed) ev.g = 1;
 
-        if (destroyed && rock.ore && !wasGrowing) ev.o = rock.ore;
+        if (destroyed && rock.ore) ev.o = rock.ore;
 
         if (destroyed && wasGrowing) ev.p = 1;
         if (wx !== undefined) {

@@ -320,6 +320,8 @@ class gameServer {
                 }
             };
 
+            if (Config.dig_royale) require('./game/terrain/modeRotation.js').boot(Config);
+
             this.name = this.gamemode.map(x => getName(x, Config) || (x[0].toUpperCase() + x.slice(1))).join(' ');
             if (Config.royale_duos) this.name = "Battle Royale Duos";
 
@@ -564,7 +566,7 @@ class gameServer {
 
         if (this.room.sendColorsToClient) {
             this.room.sendColorsToClient = false;
-            sockets.broadcastRoom();
+            this.socketManager.broadcastRoom();
         }
     }
 

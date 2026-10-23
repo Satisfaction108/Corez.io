@@ -53,6 +53,9 @@ const alwaysOn = require('../../terrain/alwaysOn.js');
 const dailyTanks = require('../../terrain/dailyTanks.js');
 const tankBoard = require('../../../accounts/tankBoard.js');
 const pentagonNest = require('../../terrain/pentagonNest.js');
+const teamMode = require('../../terrain/teamMode.js');
+const titan = require('../../terrain/titan.js');
+const modeRotation = require('../../terrain/modeRotation.js');
 const AO = () => alwaysOn.on();
 let resetMatch = false;
 let eventRaid = false;
@@ -597,7 +600,47 @@ function aoRosterTick(t) {
     }
     for (const fam of botRoster.takeRetired()) raidStats.delete("b:" + fam);
 }
+const rotation = { warned: 0, switching: false };
+function tickModeRotation(t) {
+    if (rotation.switching || !modeRotation.rotates()) return;
+    const at = modeRotation.switchAt();
+    if (!Number.isFinite(at)) return;
+    const left = at - t;
+    const next = modeRotation.label(modeRotation.nextMode());
+    if (left <= modeRotation.WARN_MS && rotation.warned < 1) {
+        rotation.warned = 1;
+        announceAll('modeswitch', "Switching to " + next + " in 1 minute", "Your bank, tank and score come with you.", 5000);
+        setToastAndSay("The game switches to " + next + " in 1 minute. Your bank, tank and score come with you.", 8000);
+    }
+    if (left <= 10_000 && rotation.warned < 2) {
+        rotation.warned = 2;
+        announceAll('modeswitch', "Switching to " + next + " in 10 seconds", "You'll drop back in automatically.", 4000);
+    }
+    if (left > 0) return;
+    rotation.switching = true;
+    modeRotation.advance(null, t);
+    console.log('[MODES] switching to ' + next);
+    for (const c of connectedClients()) {
+        const b = c.player && c.player.body;
+        if (b && !b.isDead?.() && (b.carriedGems | 0) > 0) guard('mode bank', () => payAny(b, b.carriedGems | 0, "banked for the mode switch"));
+        if (b && !b.isDead?.()) { b.carriedGems = 0; try { gems.updateSatchel(b); } catch { /* */ } }
+    }
+    setTimeout(() => restartForMode(), 600);
+}
+function restartForMode() {
+    if (process.env.ROYALE_MODE_RESTART === '0') { console.log('[MODES] restart is off (ROYALE_MODE_RESTART=0)'); return; }
+    if (process.env.pm_id === undefined) {
+        try {
+            const args = [...process.execArgv, ...process.argv.slice(1)].map(a => "'" + String(a).replace(/'/g, "'\\''") + "'").join(' ');
+            const cmd = "sleep 3 && exec '" + process.execPath.replace(/'/g, "'\\''") + "' " + args;
+            require('child_process').spawn('/bin/sh', ['-c', cmd], { cwd: process.cwd(), env: process.env, detached: true, stdio: 'inherit' }).unref();
+        } catch (e) { console.error('[MODES] relaunch failed', e && e.stack || e); }
+    }
+    process.kill(process.pid, 'SIGTERM');
+}
+
 function aoEventEnd(ev, awards) {
+    guard('team battle', () => teamMode.onBattleEnd(ev, awards));
     const byKey = new Map();
     for (const c of connectedClients()) if (c && c.id) byKey.set("s:" + c.id, c);
     for (const a of awards) {
@@ -714,7 +757,7 @@ function shownParts(s) {
     return { bank, kills, crown: sc - bank - kills };
 }
 // Round 9: a bot's points past BOT_DIM_AT come in on a log curve (diminishing
-const BOT_DIM = process.env.ROYALE_BOT_DIM !== '0';
+const BOT_DIM = process.env.ROYALE_BOT_DIM === '1';
 const BOT_DIM_AT = +process.env.ROYALE_BOT_DIM_SCORE || 2500;
 function botDimScore(raw) {
     if (!BOT_DIM || !(raw > BOT_DIM_AT)) return raw;
@@ -830,6 +873,7 @@ function boardSnapshot() {
         nc: s.nc || undefined,
         c: s.c != null ? s.c : undefined,
         tm: Config.royale_duos && s.teamKey ? s.teamKey : undefined,
+        t: teamMode.isActive() ? (teamMode.layout.teamNo(s.team) || undefined) : undefined,
         // a crown right now (the Crown Contest), and a Core Champion of the last 24 h
         cr: crownKeys.has(s.key) ? 1 : undefined,
         ch: (s.champUntil || 0) > champAt ? 1 : undefined,
@@ -1009,7 +1053,31 @@ pacing.attach({
 hunted.attach({
     callout: (body, kind, text, pts, sub, dur) => callout(body, kind, text, pts, sub, dur),
     feed: (entry) => pushFeed(entry),
+    scoreOf: (body) => scoreOfBody(body),
 });
+function teamCallout(team, kind, text, sub, dur) {
+    for (const client of connectedClients()) {
+        const b = client.player && client.player.body;
+        const mine = (b && !b.isDead?.() && b.team === team) || client._tmTeam === team;
+        if (!mine) continue;
+        try { client.talk('KC', String(kind), String(text), 0, String(sub || ""), dur | 0); } catch { /* */ }
+    }
+}
+const teamHooks = {
+    fighters: () => combatants(),
+    clients: () => connectedClients(),
+    announce: (kind, text, sub, dur) => announceAll(kind, text, sub, dur),
+    teamCallout,
+    feed: (entry) => pushFeed(entry),
+    bodyOfKey: (key) => aoBodyOfKey(key),
+    supplyNear: (body, t) => supplyDrops.requestNear(body, t, 15000),
+    supplyTeam: (team, spots, t) => supplyDrops.teamDrop(team, spots, t),
+    fx: (x, y, kind, ...extra) => fxAt(x, y, kind, ...extra),
+    payGems: (body, n, why) => payAny(body, n, why),
+    vaultsChanged: () => {},
+};
+teamMode.attach(teamHooks);
+titan.attach(teamHooks);
 function addPts(body, n, why = "broke the Core") {
     const s = body ? ensureStat(body) : null;
     if (s && n > 0) { s.extra = (s.extra | 0) + n; notePts(body, n, why); }
@@ -1135,7 +1203,7 @@ pentagonNest.setHooks({
         if (!body) return;
         const s = ensureStat(body);
         if (!s) return;
-        const mult = body.socket && !body.isBot ? dailyTanks.multForBody(body) : 1;
+        const mult = body.socket || body.isBot ? dailyTanks.multForBody(body) : 1;
         const bonus = Math.max(1, Math.round((pts | 0) * mult));
         s.extra = (s.extra | 0) + bonus;
         const runPts = Math.max(0, scoreOf(s) - (s.lifeScore0 | 0));
@@ -1209,8 +1277,10 @@ function broadcast(extra = {}) {
         feed: killFeed.slice(-8), board, lock, lockLeft, matchId: raidId, raidId, raidLeft, raidMs: RAID_MS,
         occupyMs: OCCUPY_MS, lockoutMs: LOCKOUT_MS, objectives, bloom: bloomSnap, chest: null, chests: chestSnap,
         boss: bossSnap, event: eventSnap, mod: modSnap, bounty: bountySnap, lping: pacing.huntSnapshot(t) || undefined, pings, hunt: hunted.snapshot(), core: coreFinale.snapshot(t), supply: supplyDrops.snapshot(t), abd: abilityDrops.snapshot(t), crowns: crownSnap, results: raidResults, ending, nextIn, nextMs,
-        ao: aoOn ? alwaysOn.snapshot(t) : undefined, aoStorm: aoOn ? (alwaysOn.stormSnapshot(t) || undefined) : undefined, aom: aoOn ? 1 : undefined, ...extra,
+        ao: aoOn ? alwaysOn.snapshot(t) : undefined, aoStorm: aoOn ? (alwaysOn.stormSnapshot(t) || undefined) : undefined, aom: aoOn ? 1 : undefined,
+        tw: teamMode.isActive() ? teamMode.snapshot(t) : undefined, ...extra,
     });
+    const teamsLive = teamMode.isActive();
     for (const client of connectedClients()) {
         const key = client.id ? "s:" + client.id : null;
         const mine = key ? raidStats.get(key) : null;
@@ -1312,9 +1382,15 @@ function broadcast(extra = {}) {
             if (teamsAll && myTm != null) { const tr = teamsAll.find(x => x.tm === myTm); if (tr) d.score = tr.score | 0; }
             duoTail = ',"duo":' + JSON.stringify(d);
         }
+        let teamTail = '';
+        if (teamsLive) {
+            let twy;
+            try { twy = teamMode.forClient(client, bodyLive ? body : null, t); } catch (e) { guardLog('team you', e); }
+            if (twy) teamTail = ',"twy":' + JSON.stringify(twy);
+        }
         const payload = sharedStr.slice(0, -1) + ',"youPlace":' + (myRow ? (myRow.place | 0) : 0) +
             ',"youScore":' + (mine ? scoreOf(mine) : 0) + ',"youPB":' + ((client.raidPB || 0) | 0) +
-            ',"you":' + JSON.stringify(you) + duoTail + '}';
+            ',"you":' + JSON.stringify(you) + duoTail + teamTail + '}';
         client.talk('RY', payload);
     }
 }
@@ -2111,9 +2187,10 @@ function humansInRaid() {
 
 // Bots the raid wants right now: fill up to FILL_CAP with the humans, but a
 // closing storm only holds (r / DENSITY_R)^2 fighters in all.
-function botCapNow() {
+function botCapNow(hsAt = null) {
     const FM = FIRST_MINUTES;
-    const hs = humansInRaid();
+    const hs = hsAt == null ? humansInRaid() : hsAt;
+    if (teamMode.isActive()) return teamMode.botCap(hs);
     if (worldAo()) {
         let cap = aoBotCap(hs);
         try {
@@ -2167,9 +2244,16 @@ function despawnBot(bot) {
 let lastTrimAt = 0, overCapSince = 0;
 function trimBots(t) {
     const FM = FIRST_MINUTES;
-    const bots = enemyBots();
+    let bots = enemyBots();
     const cap = botCapNow();
     if (bots.length <= cap) { overCapSince = 0; return; }
+    if (teamMode.isActive()) {
+        const n = { [-1]: 0, [-2]: 0 };
+        for (const f of combatants()) if (f.team === -1 || f.team === -2) n[f.team]++;
+        const big = n[-1] >= n[-2] ? -1 : -2;
+        const pool = bots.filter(b => b.team === big);
+        if (pool.length) bots = pool;
+    }
     if (!overCapSince) overCapSince = t;
     if (t - lastTrimAt < FM.DENSITY_TRIM_MS) return;
     const hs = humans();
@@ -2295,7 +2379,7 @@ function mateReachTest(tg) {
 
 // `back`: a botRoster entry, the same bot coming back (same name, team and
 // colour, tank, ability, board row); none for a brand new one.
-function spawnRaidBot(back = null) {
+function spawnRaidBot(back = null, onGround = false) {
     const handler = global.gameManager.gameHandler;
     if (!handler) return;
     // duos: bots play in pairs (they spawn together and cover each other). One
@@ -2308,10 +2392,11 @@ function spawnRaidBot(back = null) {
         }
         if (!plan) plan = duo.botSpawnPlan(enemyBots());
     }
-    const hole = (plan && plan.near && spotNearMate(null, plan.near)) || safeSpawnSpot(null, true);
-    // a team id nobody had this raid (stale board rows keep theirs). Solo too:
-    // a plain random id can match a live body's and make the two a team
-    const team = plan ? plan.team : back && back.team != null ? back.team : duo.freshTeamId();
+    const teamsLive = teamMode.isActive();
+    const backTeam = back && back.team != null && !(!teamsLive && (back.team === -1 || back.team === -2)) ? back.team : null;
+    const team = teamsLive ? teamMode.teamForBot(back && back.team) : plan ? plan.team : backTeam != null ? backTeam : duo.freshTeamId();
+    const hole = teamsLive ? (teamMode.spawnSpotFor({ team, x: 0, y: 0, _botRespawned: !!back }) || safeSpawnSpot(null, true))
+        : (plan && plan.near && spotNearMate(null, plan.near)) || safeSpawnSpot(null, true);
     let life = back ? { familyId: back.familyId, nameKey: back.nameKey, respawnsRemaining: 0, tank: back.tank, ability: back.ability } : null;
     let freshName = null;
     if (!back && worldAo()) {
@@ -2333,8 +2418,9 @@ function spawnRaidBot(back = null) {
     const bot = handler.bots[handler.bots.length - 1];
     if (!bot) return;
     bot.team = team;
+    if (teamsLive) teamMode.applyColor(bot);
     if (back) {
-        if (back.color != null) { const bc = soloColor.keep(team, back.color); bot.color.base = bc; bot.leaderboardColor = bc; bot.minimapColor = bc; }
+        if (back.color != null && !teamsLive && back.color !== 'blue' && back.color !== 'red') { const bc = soloColor.keep(team, back.color); bot.color.base = bc; bot.leaderboardColor = bc; bot.minimapColor = bc; }
         // a small fish that comes back as a regular gets a regular's head)
         const own = !bot.botMinnow && !back.minnow;
         if (back.skill != null && own) bot.botSkill = back.skill;
@@ -2377,7 +2463,23 @@ function spawnRaidBot(back = null) {
         growth.onSpawn(bot, gScore);
     });
     // bots fall out of the sky too
-    guard('bot drop', () => dropIn.landBot(bot));
+    if (!onGround) guard('bot drop', () => dropIn.landBot(bot));
+}
+
+const WAKE_WINDOW_MS = 15000;
+let wakeUntil = 0;
+function wakeFill(t) {
+    wakeUntil = 0;
+    let n = Math.max(0, botCapNow(Math.max(1, humansInRaid())) - enemyBots().length);
+    for (const e of botRoster.drain(n)) {
+        if (n <= 0) break;
+        n--;
+        _comb = null;
+        spawnRaidBot(e, true);
+    }
+    while (n-- > 0) { _comb = null; spawnRaidBot(null, true); }
+    _comb = null;
+    lastFillAt = t;
 }
 
 let idleSince = 0;
@@ -2402,6 +2504,7 @@ function fillBots() {
         }
         return;
     }
+    if (idleSince) wakeUntil = t + WAKE_WINDOW_MS;
     idleSince = 0;
     if (raidEnding) return;
     trimBots(t);
@@ -2415,6 +2518,8 @@ function fillBots() {
         if (st && st.a && (st.fin || st.hold || (st.r || 0) <= (st.to || 600) * 1.25) && alive >= 2) return;
     } catch { }
     botRoster.trimTo(cap - alive);
+    if (wakeUntil && t >= wakeUntil) wakeUntil = 0;
+    if (wakeUntil && (!worldAo() || alwaysOn.ready())) { wakeFill(t); return; }
     if (alive >= cap) return;
     // a death never refills on the spot
     if (!botRoster.mayFill(t)) return;
@@ -2521,18 +2626,19 @@ function onBanked(body, amount) {
     if (body.socket) guard('ach bank', () => achHooks.onBank(body, amount));
     // a first bank with no ability yet hands one out on trial
     guard('ability trial', () => require('../../terrain/abilities.js').onBanked(body, amount));
+    guard('team bank', () => teamMode.onBanked(body, amount));
     const s = ensureStat(body);
     if (!s) return;
     s.banked = (s.banked || 0) + amount;
     // Daily Featured Tank (+25% bonus score on banked gems)
-    if (body.socket && !body.isBot) {
+    if (body.socket || body.isBot) {
         try {
             const fm = dailyTanks.multForBody(body);
             if (fm > 1) {
                 const fBonus = Math.round(amount * (fm - 1));
                 if (fBonus > 0) {
                     s.extra = (s.extra | 0) + fBonus;
-                    notePts(body, fBonus, "Daily tank +" + dailyTanks.BONUS_PCT + "%");
+                    if (body.socket) notePts(body, fBonus, "Daily tank +" + dailyTanks.BONUS_PCT + "%");
                 }
             }
         } catch { /* */ }
@@ -2643,9 +2749,10 @@ function onCombatantDead(body) {
         if (killerBody.socket) fairPlay.noteKill(killerBody.socket, raidId);
         // a bot a protected player (or its fish's host) beat leaves them be all raid
         if (killerBody.socket && victimBot) guard('fair beat', () => fairPlay.noteBeat(killerBody, body));
+        guard('team kill', () => teamMode.onKill(killerBody, body));
         if (ks) {
             ks.kills = (ks.kills | 0) + 1;
-            const featMult = killerBody.socket && !killerBody.isBot ? dailyTanks.multForBody(killerBody) : 1;
+            const featMult = killerBody.socket || killerBody.isBot ? dailyTanks.multForBody(killerBody) : 1;
             const kp0 = Math.round((victimBot ? botKillScore() : killScore()) * killStageMult() * featMult);
             const kp = killerBody._fpFodder ? Math.round(kp0 * fairPlay.fodderShare(killerBody)) : kp0;
             if (victimBot) ks.botKills = (ks.botKills | 0) + 1;
@@ -3126,6 +3233,17 @@ function onHumanJoin(body) {
     // beats the base (which is shared anyway) and a random safe spot
     let mateSpawn = false;
     if (Config.royale_duos) duo.watchHits(body);
+    if (teamMode.isActive()) {
+        teamMode.watchHits(body);
+        if (!keepSpot) {
+            const spot = teamMode.spawnSpotFor(body);
+            if (spot) {
+                mateSpawn = true;
+                moveTo(body, spot.x, spot.y);
+                if (spot.tail) { try { body.sendMessage("You dropped in at your team's outpost."); } catch { /* */ } }
+            }
+        }
+    }
     if (Config.royale_duos && !keepSpot) {
         const mate = duo.mateBody(body);
         // just teamed up from the fill queue: right beside them, fight or not
@@ -3206,6 +3324,14 @@ function onHumanJoin(body) {
         moveTo(body, h.x, h.y);
         const tgK = global.gameManager.terrainGrid;
         if (tgK && tgK.pointInRock && tgK.pointInRock(body.x, body.y)) { const o = openGroundNear(tgK, body.x, body.y); moveTo(body, o.x, o.y); }
+    });
+    if (teamMode.isActive()) guard('team safe spot', () => {
+        const L = teamMode.layout;
+        const foe = L.other(body.team);
+        const bad = (L.baseAt(body.x, body.y, 260) && L.baseAt(body.x, body.y, 260) !== body.team) || L.inDroneZone(foe, body.x, body.y, 200);
+        if (!bad) return;
+        const spot = L.baseSpawnSpot(body.team);
+        if (spot) moveTo(body, spot.x, spot.y);
     });
     // a grown respawn needs more room than a spawn pocket gives
     guard('growth room', () => growRoom(body, true));
@@ -4799,6 +4925,8 @@ function tick() {
     guard('contracts', () => contracts.tick(t));
     guard('pacing', () => pacing.tick(t));
     guard('hunted', () => hunted.tick(t, fighters));
+    if (teamMode.on()) guard('teams', () => teamMode.tick(t));
+    guard('mode rotation', () => tickModeRotation(t));
     guard('core', () => coreFinale.tick(t, fighters));
     guard('crowns', () => crowns.tick(t));
     guard('achievements', () => achHooks.tick(t));
@@ -4961,7 +5089,7 @@ function stormFleePoint(body) {
 
 class DigRoyale {
     constructor(gameManager) { this.gameManager = gameManager; }
-    start() { startRaid(true); }
+    start() { if (teamMode.on()) teamMode.activate(); startRaid(true); }
     loop() { /* clock runs from the terrain tick */ }
     reset() { startRaid(false); }
     redefine(gm) { this.gameManager = gm; }

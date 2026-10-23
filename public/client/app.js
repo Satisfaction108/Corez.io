@@ -19,6 +19,7 @@ import * as abilityIntro from './abilityIntro.js';
 import * as nameCheck from './nameHint.js';
 import { tabSeen, markTabSeen, TAB_SEEN_MS } from './abilityIntroLogic.js';
 import * as raidHeat from './raidHeat.js';
+import * as teamWar from './teamWar.js';
 import * as crowns from './crowns.js';
 import * as scoreText from './scoreLogic.js';
 import * as newcomer from './newcomer.js';
@@ -50,6 +51,7 @@ import { netSmooth } from './netSmooth.js';
 import { predictor } from './predict.js';
 import * as aoHud from './alwaysOn.js';
 import * as tankRecords from './tankRecords.js';
+import './cinematic.js';
 
 (async function (util, global, config, Canvas, color, gameDraw, socketStuff) {
     let { socketInit, resync, gui, leaderboard, minimap, moveCompensation, lag, getNow } = socketStuff;
@@ -1676,6 +1678,7 @@ import * as tankRecords from './tankRecords.js';
         }, 1e3);
 
         global.gameConnecting = true;
+        global.joinStartAt = performance.now();
 
         global.socket = socketInit();
 
@@ -3695,13 +3698,16 @@ import * as tankRecords from './tankRecords.js';
             const depositing = mine && v0.total > 0 && v0.onPad && !v0.isOutpost;
             const doneFlash = mine ? Math.max(0, 1 - (now - v0.doneAt) / 700) : 0;
             // raid vaults (the old "rainbow" ones) are one steady colour: the Banked pill's
-            const rainbow = !!v.rainbow;
-            const teamCol = rainbow ? BANK_PILL
-                : gameDraw.getColor(v.team === -1 ? "blue" : "red");
+            const vTeam = teamWar.vaultTeam(v);
+            const rainbow = !!v.rainbow || (vTeam !== -1 && vTeam !== -2 && teamWar.on());
+            const outW = teamWar.outpostWorld(v);
+            const tailGrey = outW && outW.neutral ? outW.col : null;
+            const teamCol = tailGrey || (rainbow ? BANK_PILL
+                : gameDraw.getColor(vTeam === -1 ? "blue" : "red"));
             const pal = rainbow ? { main: teamCol, light: "#ffffff", high: "#ffffff" }
-                : (v.team === -1 ? BLUE_PAL : RED_PAL);
-            const doorSprites = rainbow ? getVaultSpritesForColor(BANK_PILL)
-                : getVaultSpritesForTeam(v.team);
+                : (vTeam === -1 ? BLUE_PAL : RED_PAL);
+            const doorSprites = tailGrey ? getVaultSpritesForColor(tailGrey) : rainbow ? getVaultSpritesForColor(BANK_PILL)
+                : getVaultSpritesForTeam(vTeam);
 
             const isCenterNest = v.x === 0 && v.y === 0 && royaleMode();
             if (isCenterNest) {
@@ -3751,7 +3757,7 @@ import * as tankRecords from './tankRecords.js';
             c.restore();
 
             // sparkle: the team heart glints on its own clock
-            const sparkT = ((now / 2600 + (v.team === -1 ? 0 : 0.5)) % 1);
+            const sparkT = ((now / 2600 + (vTeam === -1 ? 0 : 0.5)) % 1);
             if (sparkT < 0.16) {
                 const ga = Math.sin(sparkT / 0.16 * Math.PI);
                 const gr = R * 0.10 * ga;
@@ -3806,7 +3812,7 @@ import * as tankRecords from './tankRecords.js';
                 }
             }
             // the name floats above the door in the HUD's display face
-            const vLabel = (v.x === 0 && v.y === 0 && royaleMode()) ? "Gem Nest · Vault" : (v.name || "Vault");
+            const vLabel = outW ? outW.label : (v.x === 0 && v.y === 0 && royaleMode()) ? "Gem Nest · Vault" : (v.name || "Vault");
             const vls = Math.max(13, R * 0.28);
             let vly = padLabelY(sx, sy - R * 1.42, hudTitleW(vLabel, vls), vls);
             let vla = labelAlpha(sx, vly, 60, 24);
@@ -3817,7 +3823,7 @@ import * as tankRecords from './tankRecords.js';
             }
             // standing on it: the deposit panel says it, so the name steps aside
             const onThis = global.vault.onPad && !global.vault.isOutpost && Math.hypot(sx - global.screenWidth / 2, sy - global.screenHeight / 2) < R;
-            if (!onThis) worldLabel(c, vLabel, sx, vly, vls, HUD.head, 1, 0, hudTitleW(vLabel, vls) + 8, vls + 6);
+            if (!onThis) worldLabel(c, vLabel, sx, vly, vls, outW ? outW.col : HUD.head, 1, 0, hudTitleW(vLabel, vls) + 8, vls + 6);
 
             if (doneFlash > 0) {
                 // completion burst: one-off ring of gold sparks
@@ -4380,6 +4386,59 @@ import * as tankRecords from './tankRecords.js';
         return !!(ob && ob.k === "zone" && ob.st === 0);
     }
 
+    const TEAM_BASE_CORNER = 150, TEAM_BASE_LINE = 7;
+    const teamBaseCache = { setup: null, w: 0, h: 0, rects: [] };
+    function teamFloorOn() {
+        return !!global.teamTerrain && royaleMode();
+    }
+    function teamBaseHex(t) {
+        const h = gameDraw.getColor(t === 2 ? "red" : "blue");
+        return typeof h === "string" && h[0] === "#" ? h : t === 2 ? "#f14e54" : "#00b2e1";
+    }
+    function teamBaseRects() {
+        const tw = global.royale && global.royale.tw;
+        if (tw && Array.isArray(tw.bases) && tw.bases.length) return tw.bases;
+        const setup = global.roomSetup, gw = global.gameWidth, gh = global.gameHeight;
+        const C = teamBaseCache;
+        if (C.setup === setup && C.w === gw && C.h === gh) return C.rects;
+        C.setup = setup; C.w = gw; C.h = gh; C.rects = [];
+        if (!setup || !setup.length || !(gw > 0) || !(gh > 0)) return C.rects;
+        const W = setup[0].length, H = setup.length, box = { blue: null, red: null };
+        for (let f = 0; f < H; f++) for (let h = 0; h < W; h++) {
+            const tile = setup[f][h];
+            const k = tile && (tile.color === "blue" || tile.color === "red") ? tile.color : null;
+            if (!k) continue;
+            const x0 = (h / W - 0.5) * gw, x1 = ((h + 1) / W - 0.5) * gw, y0 = (f / H - 0.5) * gh, y1 = ((f + 1) / H - 0.5) * gh;
+            const b = box[k];
+            if (!b) box[k] = { t: k === "red" ? 2 : 1, x0, x1, y0, y1 };
+            else { b.x0 = Math.min(b.x0, x0); b.x1 = Math.max(b.x1, x1); b.y0 = Math.min(b.y0, y0); b.y1 = Math.max(b.y1, y1); }
+        }
+        if (box.blue) C.rects.push(box.blue);
+        if (box.red) C.rects.push(box.red);
+        return C.rects;
+    }
+    function drawTeamBases(px, py, ratio) {
+        const c = ctx[0], sw = global.screenWidth, sh = global.screenHeight;
+        const lw = Math.max(2, TEAM_BASE_LINE * ratio);
+        for (const b of teamBaseRects()) {
+            if (!b) continue;
+            const x0 = ratio * Math.min(b.x0, b.x1) - px + sw / 2, x1 = ratio * Math.max(b.x0, b.x1) - px + sw / 2;
+            const y0 = ratio * Math.min(b.y0, b.y1) - py + sh / 2, y1 = ratio * Math.max(b.y0, b.y1) - py + sh / 2;
+            if (x1 < -lw || y1 < -lw || x0 > sw + lw || y0 > sh + lw) continue;
+            const hex = teamBaseHex(b.t | 0);
+            c.save();
+            roundRectPath(c, x0, y0, x1 - x0, y1 - y0, TEAM_BASE_CORNER * ratio);
+            c.globalAlpha = worldDark ? 0.16 : 0.22;
+            c.fillStyle = hex;
+            c.fill();
+            c.globalAlpha = worldDark ? 0.75 : 0.85;
+            c.lineWidth = lw;
+            c.lineJoin = "round";
+            c.strokeStyle = worldMix(hex, worldDark ? -0.1 : -0.15);
+            c.stroke();
+            c.restore();
+        }
+    }
     function drawFloor(px, py, ratio, tick) {
         if (worldThemeDirty) syncWorldTheme();
 
@@ -4455,6 +4514,7 @@ import * as tankRecords from './tankRecords.js';
                 ctx[0].restore();
             }
         }
+        const teamFloor = teamFloorOn();
         if (global.roomSetup.length) {
             let W = global.roomSetup[0].length,
                 H = global.roomSetup.length;
@@ -4480,6 +4540,7 @@ import * as tankRecords from './tankRecords.js';
                         ctx[0].drawImage(tile.renderImage, top, bottom, left - top, right - bottom);
                     }
 
+                    if (teamFloor && (tile.color === "blue" || tile.color === "red")) continue;
                     ctx[0].globalAlpha = 0.3;
                     if (tile.color == 'none') tile.color = 'border';
                     let tileColor = gameDraw.getColor(tile.color, true);
@@ -4507,6 +4568,7 @@ import * as tankRecords from './tankRecords.js';
                 }
             }
         }
+        if (teamFloor) drawTeamBases(px, py, ratio);
         let gridsize = 30 * ratio;
         if (config.graphical.showGrid && 2.5 < gridsize) {
             ctx[0].save();
@@ -4825,6 +4887,10 @@ import * as tankRecords from './tankRecords.js';
                 gem: "#e889ff", gemLight: "#f8dcff", ink: "#26103c", crack: "rgba(30,10,52,0.75)", glow: "226,160,255" },
         crate: { wood: "#c6955a", woodDark: "#9c7140", woodLight: "#dcb27a", metal: "#3cc07a", metalDark: "#22784a",
                  gem: "#7af5b2", gemLight: "#e2ffef", ink: "#2c2013", crack: "rgba(40,26,10,0.75)", glow: "130,250,185" },
+        crateBlue: { wood: "#c6955a", woodDark: "#9c7140", woodLight: "#dcb27a", metal: "#1fa4e0", metalDark: "#126a96",
+                     gem: "#86dcff", gemLight: "#e6f8ff", ink: "#2c2013", crack: "rgba(40,26,10,0.75)", glow: "120,200,255" },
+        crateRed: { wood: "#c6955a", woodDark: "#9c7140", woodLight: "#dcb27a", metal: "#e8474f", metalDark: "#9a2a31",
+                    gem: "#ff9aa0", gemLight: "#ffe6e8", ink: "#2c2013", crack: "rgba(40,26,10,0.75)", glow: "255,140,150" },
     };
     const CHEST_SPRITE_R = 1.4, CHEST_SPRITE_PX = 512;
     const CHEST_POLY = {
@@ -4832,7 +4898,40 @@ import * as tankRecords from './tankRecords.js';
         crate: [[-0.74, -0.66], [-0.66, -0.74], [0.66, -0.74], [0.74, -0.66], [0.74, 0.66], [0.66, 0.74], [-0.66, 0.74], [-0.74, 0.66]],
     };
     const chestSprites = {}, chestUnitPaths = {};
-    const chestKindKey = (kind) => kind.emerald ? "crate" : kind.epic ? "epic" : "copper";
+    const chestKindKey = (kind) => kind.team === 1 ? "crateBlue" : kind.team === 2 ? "crateRed" : kind.emerald ? "crate" : kind.epic ? "epic" : "copper";
+    const TEAM_CRATE_KIND = { 1: { epic: true, emerald: true, team: 1 }, 2: { epic: true, emerald: true, team: 2 } };
+    const teamCrateSeen = new Map();
+    function teamCrateKind(instance, chest) {
+        if (!chest || !chest.epic || !teamWar.on()) return null;
+        const col = typeof instance.color === "string" ? instance.color : "";
+        const team = col === "blue" || col.startsWith("blue ") || col.startsWith("10 ") ? 1 : col === "red" || col.startsWith("red ") || col.startsWith("12 ") ? 2 : 0;
+        if (!team) return null;
+        if (!teamCrateSeen.has(instance.id)) {
+            if (teamCrateSeen.size > 64) teamCrateSeen.clear();
+            teamCrateSeen.set(instance.id, team);
+        }
+        return TEAM_CRATE_KIND[team];
+    }
+    function drawCrateLock(c, x, y, s, col, alpha) {
+        c.save();
+        c.globalAlpha = alpha;
+        c.lineJoin = "round";
+        c.lineCap = "round";
+        c.beginPath();
+        c.arc(x, y - s * 0.32, s * 0.46, Math.PI, 0);
+        c.lineTo(x + s * 0.46, y);
+        c.moveTo(x - s * 0.46, y);
+        c.lineTo(x - s * 0.46, y - s * 0.32);
+        c.strokeStyle = HUD.ink; c.lineWidth = s * 0.5; c.stroke();
+        c.strokeStyle = "#e9e0cc"; c.lineWidth = s * 0.22; c.stroke();
+        chestRoundRect(c, x - s * 0.78, y - s * 0.12, s * 1.56, s * 1.12, s * 0.22);
+        c.fillStyle = col; c.fill();
+        c.strokeStyle = HUD.ink; c.lineWidth = s * 0.2; c.stroke();
+        c.fillStyle = HUD.ink;
+        c.beginPath(); c.arc(x, y + s * 0.34, s * 0.17, 0, Math.PI * 2); c.fill();
+        c.fillRect(x - s * 0.07, y + s * 0.36, s * 0.14, s * 0.34);
+        c.restore();
+    }
     function chestRoundRect(c, x, y, w, h, r) {
         c.beginPath();
         c.moveTo(x + r, y);
@@ -4933,12 +5032,12 @@ import * as tankRecords from './tankRecords.js';
         const u = CHEST_SPRITE_PX / (CHEST_SPRITE_R * 2);
         c.translate(CHEST_SPRITE_PX / 2, CHEST_SPRITE_PX / 2);
         c.scale(u, u);
-        if (key === "crate") paintCrate(c, CHEST_ART.crate); else paintChest(c, CHEST_ART[key]);
+        if (key.startsWith("crate")) paintCrate(c, CHEST_ART[key]); else paintChest(c, CHEST_ART[key]);
         chestSprites[key] = s;
         return s;
     }
     function chestUnitPath(key) {
-        const shape = key === "crate" ? "crate" : "chest";
+        const shape = key.startsWith("crate") ? "crate" : "chest";
         let p = chestUnitPaths[shape];
         if (p) return p;
         p = new Path2D();
@@ -4975,7 +5074,9 @@ import * as tankRecords from './tankRecords.js';
         const tr = window.terrainRenderer;
         const key = chestKindKey(kind);
         const art = CHEST_ART[key];
-        const shape = key === "crate" ? "crate" : "chest";
+        const shape = key.startsWith("crate") ? "crate" : "chest";
+        const myTeam = kind.team ? teamWar.myTeam() : 0;
+        const foeCrate = !!kind.team && !!myTeam && kind.team !== myTeam;
         const cellKey = chestCellKey(instance.id);
         let cell = null, tilePx = 0, rockSz = 2.4;
         if (tr && tr.ready && tr._world) {
@@ -5067,6 +5168,11 @@ import * as tankRecords from './tankRecords.js';
             c.fillStyle = "#fff6dc";
             c.fill(unit);
         }
+        if (foeCrate) {
+            c.globalAlpha = alpha * 0.22;
+            c.fillStyle = "#000000";
+            c.fill(unit);
+        }
         c.globalAlpha = alpha;
         c.restore();
         if (cell && stage >= 1 && tr._getCrackPath) {
@@ -5086,11 +5192,12 @@ import * as tankRecords from './tankRecords.js';
             }
         }
         if (art.glow && !config.graphical.noGlow) {
-            const gy = key === "crate" ? y + trY : y + trY - 0.5 * R * sy;
+            const gy = shape === "crate" ? y + trY : y + trY - 0.5 * R * sy;
             drawChestGlint(c, x + trX - 0.08 * R, gy - 0.1 * R, 0.16 * R, now, (instance.id % 17) * 300, alpha);
-            drawChestGlint(c, x + trX + 0.55 * R, y + trY + (key === "crate" ? -0.55 : -0.62) * R, 0.1 * R, now + 1300, (instance.id % 11) * 230, alpha);
+            drawChestGlint(c, x + trX + 0.55 * R, y + trY + (shape === "crate" ? -0.55 : -0.62) * R, 0.1 * R, now + 1300, (instance.id % 11) * 230, alpha);
         }
         c.restore();
+        if (foeCrate && R >= 6) drawCrateLock(c, x + trX + 0.58 * R, y + trY - 0.5 * R, Math.max(6, 0.3 * R), teamWar.teamHex(kind.team), alpha);
         drawChestLabel(c, x, y - R * 1.12, R, instance, kind, alpha);
     }
     // Round 8: a light name over every chest ("Epic chest"), since new players took
@@ -5099,14 +5206,17 @@ import * as tankRecords from './tankRecords.js';
     function drawChestLabel(c, x, y, R, instance, kind, alpha) {
         if (!royaleActive() || global.showBigMap || R < 6) return;
         const k = kind.emerald ? "crate" : kind.epic ? "epic" : "copper";
+        const me = kind.team ? teamWar.myTeam() : 0;
+        const text = !kind.team ? CHEST_LABEL[k] : me && kind.team !== me ? (kind.team === 1 ? "Blue" : "Red") + " team's crate" : "Your team's crate";
+        const col = kind.team ? teamWar.teamHex(kind.team) : CHEST_LABEL_COL[k];
         const d = Math.hypot(instance.render.x - global.player.renderx, instance.render.y - global.player.rendery);
         const far = d < 900 ? 1 : Math.max(0.35, 1 - (d - 900) / 1100);
         const size = Math.max(12, Math.min(17, R * 0.3));
         const ly = y - size * 0.55;
-        const w = hudTitleW(CHEST_LABEL[k], size) + 8;
+        const w = hudTitleW(text, size) + 8;
         const a = alpha * 0.92 * far;
         if (a < 0.03) return;
-        worldLabel(c, CHEST_LABEL[k], x, ly, size, CHEST_LABEL_COL[k], a, k === "crate" ? 1 : k === "epic" ? 2 : 3, w, size + 6);
+        worldLabel(c, text, x, ly, size, col, a, k === "crate" ? 1 : k === "epic" ? 2 : 3, w, size + 6);
     }
     let bgCanvasEl = null, bgHidden = false;
     function drawEntities(px, py, ratio, tick) {
@@ -5252,7 +5362,7 @@ import * as tankRecords from './tankRecords.js';
             }
             const _chest = isLootChestEntity(instance);
             if (_chest) {
-                drawLootChest(ctx[1], x, y, instance, ratio, instance.alpha * alpha, isize, raidHeat.crateKind(instance.id) || _chest);
+                drawLootChest(ctx[1], x, y, instance, ratio, instance.alpha * alpha, isize, teamCrateKind(instance, _chest) || raidHeat.crateKind(instance.id) || _chest);
                 continue;
             }
             if (isRoyaleBossEntity(instance)) drawBossAura(ctx[1], x, y, instance, ratio, instance.alpha * alpha);
@@ -5691,7 +5801,7 @@ import * as tankRecords from './tankRecords.js';
     }
     // The badge over a tank: your revenge target, the bounty, or a streak.
     const streakBadges = new Map();
-    const REVENGE_BADGE = { key: "rv", word: "REVENGE", num: "", col: "#ff4b4b", icon: "skull" };
+    const REVENGE_BADGE = { key: "rv", word: "REVENGE", num: "", col: "#ff4b4b", icon: "target" };
     // a tank far beyond a new or struggling player: the server flags it
     const TOUGH_BADGE = { key: "tough", word: "TOO STRONG", num: "", col: "#b9b2c8", icon: "skull" };
     let bountyBadge = null;
@@ -5788,7 +5898,7 @@ import * as tankRecords from './tankRecords.js';
             c.lineWidth = Math.max(1, ow * 0.7);
             for (const k of [-0.2, 0, 0.2]) { c.beginPath(); c.moveTo(cx + r * k, cy + r * 0.62); c.lineTo(cx + r * k, cy + r * 0.86); c.stroke(); }
         } else if (bd.icon === "target") {
-            const top = /TOP/.test(bd.word);
+            const top = !!bd.top || /TOP/.test(bd.word);
             // TOP TARGET in gold, so it reads apart from a plain hunted mark
             if (top) bd = { ...bd, col: "#ffc93c" };
             c.lineWidth = ow * 2; c.strokeStyle = ink;
@@ -5830,7 +5940,7 @@ import * as tankRecords from './tankRecords.js';
     }
     // QA: every tag icon on one strip (data URL), to look at without a raid
     window.dwTagIcons = (d = 48) => {
-        const list = [REVENGE_BADGE, TOUGH_BADGE, { key: "huQA", word: "HUNTED ", num: "", col: "#ff5a48", icon: "target" }, { key: "tpQA", word: "TOP TARGET ", num: "", col: "#ff5a48", icon: "target" }, { key: "s7", word: "STREAK ", num: "7", col: "#ff9a2e", icon: "flame" }];
+        const list = [REVENGE_BADGE, TOUGH_BADGE, { key: "huQA", word: "HUNTED ", num: "", col: "#ff5a48", icon: "target" }, { key: "tpQA", word: "HUNTED ", num: "", col: "#ff5a48", icon: "target", top: true }, { key: "s7", word: "STREAK ", num: "7", col: "#ff9a2e", icon: "flame" }];
         const sp = list.map(b => tagIconSprite(b, d));
         const cv = document.createElement("canvas");
         cv.width = sp.reduce((a, s2) => a + s2.cv.width + 12, 12); cv.height = d + 24;
@@ -5925,6 +6035,7 @@ import * as tankRecords from './tankRecords.js';
         const list = global.enemyPings.map(p => ({ p, d: Math.hypot(p.x - mx0, p.y - my0) }))
             .sort((a, b) => a.d - b.d).slice(0, ENEMY_PING_MAX);
         const c = ctx[2];
+        const col = enemyPingCol();
         for (const { p, d } of list) {
             const age = now - p.at;
             const far = Math.max(0.5, 1 - Math.max(0, d - 2000) / 5000);
@@ -5935,13 +6046,13 @@ import * as tankRecords from './tankRecords.js';
             if (onScreen) {
                 const bob = Math.sin(now / 260 + (p.at % 97)) * 4;
                 const r = 23 + 2 * Math.sin(now / 200);
-                drawPingDiamond(c, cx + dx, cy + dy - 26 + bob, r, fade);
+                drawPingDiamond(c, cx + dx, cy + dy - 26 + bob, r, fade, col);
                 // spawn pulse ring
                 if (age < 700) {
                     const t = age / 700;
                     c.save();
                     c.globalAlpha = (1 - t) * 0.7;
-                    c.strokeStyle = "#eb4034";
+                    c.strokeStyle = col || "#eb4034";
                     c.lineWidth = 4.5 * (1 - t) + 1.5;
                     c.beginPath();
                     c.arc(cx + dx, cy + dy, 22 + t * 70, 0, Math.PI * 2);
@@ -5956,11 +6067,11 @@ import * as tankRecords from './tankRecords.js';
                 c.globalAlpha = fade;
                 c.translate(e.x, e.y);
                 c.rotate(e.ang);
-                c.fillStyle = "#eb4034"; c.strokeStyle = color.black; c.lineWidth = 2.5; c.lineJoin = "round";
+                c.fillStyle = col || "#eb4034"; c.strokeStyle = color.black; c.lineWidth = 2.5; c.lineJoin = "round";
                 c.beginPath(); c.moveTo(2, 0); c.lineTo(-10, -9); c.lineTo(-10, 9); c.closePath();
                 c.fill(); c.stroke();
                 c.restore();
-                drawPingDiamond(c, e.x - ca * 32, e.y - sa * 32, 22, fade * 0.95);
+                drawPingDiamond(c, e.x - ca * 32, e.y - sa * 32, 22, fade * 0.95, col);
             }
         }
     }
@@ -6633,8 +6744,8 @@ import * as tankRecords from './tankRecords.js';
             const cTxt = "Carried " + util.formatLargeNumber(carried) + " / " + util.formatLargeNumber(g.cap | 0);
             let ps = 12; while (ps > 8.5 && hudTextW(pTxt, ps) > barW - 12) ps -= 0.5;
             let cs = 12; while (cs > 8.5 && hudTextW(cTxt, cs) > barW - 12) cs -= 0.5;
-            hudTitle(pTxt, walletX + barW / 2 + 0.5, pillTop + pillH / 2 + 5 - (12 - ps) * 0.35, ps, color.guiwhite, "center", 1, ctx[2]);
-            hudTitle(cTxt, walletX + barW + gap + barW / 2 + 0.5, pillTop + pillH / 2 + 5 - (12 - cs) * 0.35, cs, color.guiwhite, "center", 1, ctx[2]);
+            hudTitle(pTxt, walletX + barW / 2, pillTop + pillH / 2, ps, color.guiwhite, "center", 1, ctx[2]);
+            hudTitle(cTxt, walletX + barW + gap + barW / 2, pillTop + pillH / 2, cs, color.guiwhite, "center", 1, ctx[2]);
             if (royaleActive() && !global.mobile && global.canvas && !global.died) {
                 const crb = global.canvas.height / global.screenHeight / global.ratio;
                 const mxb = global.mouse.x / (crb * global.ratio), myb = global.mouse.y / (crb * global.ratio);
@@ -6973,6 +7084,22 @@ import * as tankRecords from './tankRecords.js';
 
     // Dig Wars: pickup feedback in the WORLD, not the HUD - +N popups float
 
+    const GEM_POP_COL = {
+        gemPickupCopper: "#e07b2e", gemPickupVein: "#3b8cf0", gemPickupShard: "#c050e0", gemPickupShardCore: "#c050e0",
+        gemPickupEmerald: "#22c870", gemPickupEmeraldCore: "#22c870", gemPickupLoot: "#f2b83c",
+    };
+    global.gemHueNear = () => {
+        const me = global.player;
+        if (!me || !isFinite(me.renderx)) return null;
+        let best = null, bd = 320 * 320;
+        for (const e of global.entities) {
+            const cls = gemSpriteClass(e);
+            if (!cls || !GEM_POP_COL[cls]) continue;
+            const d = (e.x - me.renderx) * (e.x - me.renderx) + (e.y - me.rendery) * (e.y - me.rendery);
+            if (d < bd) { bd = d; best = cls; }
+        }
+        return best ? GEM_POP_COL[best] : null;
+    };
     function drawGemPopups() {
         const g = global.gems;
         if (!g || !config.game.gemPopups) return;
@@ -7020,7 +7147,7 @@ import * as tankRecords from './tankRecords.js';
             ctx[2].globalAlpha = alpha;
             drawText("+" + p.value,
                      Math.round(cx + (p.drift || 0)), Math.round(cy - rise),
-                     size, gameDraw.mixColors("#ffd04d", "#ffffff", heat * 0.85), "center");
+                     size, p.col || gameDraw.mixColors("#ffd04d", "#ffffff", heat * 0.85), "center");
             ctx[2].restore();
         }
     }
@@ -7469,6 +7596,25 @@ import * as tankRecords from './tankRecords.js';
         c.fillText(text, x, y + dy);
         c.restore();
     }
+    function crispInk(col) {
+        if (HUD.theme !== "light" || rawInkOn || typeof col !== "string" || col[0] !== "#" || col.length !== 7) return col;
+        const d = fillInfo(col);
+        if (!d || d.lum <= 0.44) return col;
+        return gameDraw.mixColors(col, "#000000", Math.min(0.62, 1 - 0.44 / d.lum));
+    }
+    function hudLabel(text, x, y, size, col, align = "left", alpha = 1, c = ctx[2]) {
+        size += config.graphical.fontSizeBoost;
+        const t = tfOf(c);
+        const sx = t && t.a > 0 && !t.b && !t.c ? t.a : 1, sy = t && t.d > 0 && !t.b && !t.c ? t.d : 1;
+        c.save();
+        if (alpha < 1) c.globalAlpha *= Math.max(0, alpha);
+        c.font = hudFont(size);
+        c.textAlign = align;
+        c.textBaseline = "middle";
+        c.fillStyle = crispInk(col);
+        c.fillText(text, Math.round(x * sx) / sx, Math.round((y + size * 0.04) * sy) / sy);
+        c.restore();
+    }
     const hudTitleWidths = new Map();
     function hudTitleW(text, size) {
         size += config.graphical.fontSizeBoost;
@@ -7628,8 +7774,30 @@ import * as tankRecords from './tankRecords.js';
     function fmtDist(d) { return d >= 1000 ? (d / 1000).toFixed(1) + "km" : Math.round(d) + "m"; }
     stormFx.init({ HUD, hudTitle, hudTitleW, hudTextW: (t, sz) => hudTextW(t, sz), hudPanel, drawText, fmtDist });
     // hunted marks, the Core, drop-ins and the screen juice (raidHeat.js, juice.js)
-    raidHeat.init({ HUD, rawInk, hudPanel, hudTitle, hudTitleW, hudBar, drawText, fmtNum, fmtDist, haloSprite, vignetteSprite, coachOn: () => coach.active(), colorOf: (c) => gameDraw.modifyColor(c), cardHold: () => deathCardUp(), crateSprite: () => chestSprite("crate"), crateSpriteR: CHEST_SPRITE_R });
+    raidHeat.init({ HUD, rawInk, hudPanel, hudTitle, hudTitleW, hudBar, hudLabel: (text, x, y, size, col, align) => hudLabel(text, x, y, size, col, align), drawText, fmtNum, fmtDist, haloSprite, vignetteSprite, coachOn: () => coach.active(), colorOf: (c) => gameDraw.modifyColor(c), cardHold: () => deathCardUp(), crateSprite: (team) => chestSprite(team === 1 ? "crateBlue" : team === 2 ? "crateRed" : "crate"), crateSpriteR: CHEST_SPRITE_R });
     achCard.init({ HUD, hudPanel, hudTitle, hudTitleW, hudTextW: (t, sz) => hudTextW(t, sz), drawText, rr: (c, x, y, w, h, r) => roundRectPath(c, x, y, w, h, r) });
+    teamWar.init({
+        HUD, hudPanel, hudTitle, hudTitleW, hudTextW: (t, sz) => hudTextW(t, sz), hudBar, hudKey: (c, x, y, label, h, a) => hudKey(c, x, y, label, h, a), drawText, fmtNum, fmtDist,
+        rr: (c, x, y, w, h, r) => roundRectPath(c, x, y, w, h, r),
+        wrap: (t, size, maxW) => wrapLines(t, size, maxW),
+        worldLabel: (c, text, x, y, size, col) => worldLabel(c, text, x, y, size, col, 1, 0, hudTitleW(text, size) + 8, size + 6),
+        padTint: (hex) => worldMix(hex, WORLD_ART.padTint),
+        padLine: (hex) => worldMix(hex, WORLD_ART.padLine),
+        teamHex: (n) => { const h = gameDraw.getColor(n === 1 ? "blue" : "red"); return typeof h === "string" && h[0] === "#" ? h : null; },
+        hudLabel: (text, x, y, size, col, align) => hudLabel(text, x, y, size, col, align),
+        padArrow: (ang) => drawSafeArrow(ctx[2], global.screenWidth / 2, global.screenHeight / 2, ang, performance.now()),
+        selfId: () => gui.playerid,
+        mouseGui: () => {
+            if (global.mobile || !global.canvas) return null;
+            const cr = global.canvas.height / global.screenHeight / global.ratio;
+            return { x: global.mouse.x / (cr * global.ratio), y: global.mouse.y / (cr * global.ratio) };
+        },
+        touchRect: (r, id) => {
+            if (!global.mobile || !r || !global.canvas) return;
+            const cr = global.canvas.height / global.screenHeight / global.ratio;
+            touch.uiRects[id || "warPad"] = { x: r.x * cr, y: r.y * cr, w: r.w * cr, h: r.h * cr };
+        },
+    });
     function treeTankPaint(c, key, x, y, w, h) {
         const picture = mockupPicture(String(key), gui.color);
         const m = tankMockOf(picture);
@@ -7925,6 +8093,8 @@ import * as tankRecords from './tankRecords.js';
         if (abilityBarRect) out.push(abilityBarRect);
         if (vitalsRect) out.push(vitalsRect);
         if (!perkAvoidSkip) { const pr = raidPerks.avoidRect(); if (pr) out.push(pr); }
+        const wp = teamWar.avoidRect();
+        if (wp) out.push(wp);
         return out;
     }
     // Where the main HUD pieces were drawn this frame (GUI units), for
@@ -8026,7 +8196,9 @@ import * as tankRecords from './tankRecords.js';
             let a = 0.7 + 0.3 * pulse;
             const gone = ch.e != null ? chestGoneAt.get(ch.e) : undefined;
             if (gone !== undefined) { a *= Math.max(0, 1 - (now - gone) / 150); if (a <= 0) continue; }
-            const spr = haloSprite(ch.sd ? "chest-sd" : ch.rare ? "chest-e" : "chest-c", ch.sd ? "111,245,168" : ch.rare ? "220,140,248" : "240,160,96", [[0, 0.40], [0.55, 0.11], [1, 0]]);
+            const tm = ch.sd && ch.e != null ? teamCrateSeen.get(ch.e) || 0 : 0;
+            const spr = tm ? haloSprite(tm === 1 ? "chest-sdb" : "chest-sdr", CHEST_ART[tm === 1 ? "crateBlue" : "crateRed"].glow, [[0, 0.40], [0.55, 0.11], [1, 0]])
+                : haloSprite(ch.sd ? "chest-sd" : ch.rare ? "chest-e" : "chest-c", ch.sd ? "111,245,168" : ch.rare ? "220,140,248" : "240,160,96", [[0, 0.40], [0.55, 0.11], [1, 0]]);
             c.save();
             c.globalAlpha = a;
             c.drawImage(spr, sx - R, sy - R, R * 2, R * 2);
@@ -8039,11 +8211,13 @@ import * as tankRecords from './tankRecords.js';
         const now = performance.now();
         const halfW = global.gameWidth / 2, halfH = global.gameHeight / 2;
         const c = ctx[0];
-        const spr = getVaultSpritesForColor(SHOP_ACCENT);
+        const sprBase = getVaultSpritesForColor(SHOP_ACCENT);
         for (const s of global.shops) {
             const sx = roomX + (s.x + halfW) * ratio, sy = roomY + (s.y + halfH) * ratio;
             const R = (s.r || 95) * ratio;
             if (sx < -R * 2 || sx > global.screenWidth + R * 2 || sy < -R * 2 || sy > global.screenHeight + R * 2) continue;
+            const accent = teamWar.shopHex(s, SHOP_ACCENT);
+            const spr = accent === SHOP_ACCENT ? sprBase : getVaultSpritesForColor(accent);
             const mine = global.shop.onPad && global.shop.padId === s.id;
             const pulse = 0.5 + 0.5 * Math.sin(now / 650 + s.id);
             c.save();
@@ -8053,12 +8227,12 @@ import * as tankRecords from './tankRecords.js';
             // vault plate style on a hexagon (the hitbox): ink drop, deep
             // teal face, ink outline, rim band
             polyPath(c, 0, 0, R * 1.16, 6, Math.PI / 6);
-            c.fillStyle = worldMix(SHOP_ACCENT, WORLD_ART.padTint); c.fill();
-            c.lineWidth = lw * 1.6; c.strokeStyle = worldMix(SHOP_ACCENT, WORLD_ART.padLine); c.stroke();
+            c.fillStyle = worldMix(accent, WORLD_ART.padTint); c.fill();
+            c.lineWidth = lw * 1.6; c.strokeStyle = worldMix(accent, WORLD_ART.padLine); c.stroke();
             polyPath(c, 0, 0, R * 1.0, 6, Math.PI / 6);
             c.lineWidth = Math.max(2, R * 0.065);
             c.globalAlpha = 0.8 + 0.2 * pulse;
-            c.strokeStyle = SHOP_ACCENT; c.stroke();
+            c.strokeStyle = accent; c.stroke();
             c.globalAlpha = 1;
             // yours: cream dashes run round the band while you stand on it
             if (mine) {
@@ -8090,7 +8264,7 @@ import * as tankRecords from './tankRecords.js';
             // on it (the shop panel says where you are)
             if (!mine) {
                 const sl = String(s.name || "Shop"), sls = Math.max(13, R * 0.25);
-                worldLabel(c, sl, sx, sy - R * 1.4, sls, SHOP_ACCENT, 1, 0, hudTitleW(sl, sls) + 8, sls + 6);
+                worldLabel(c, sl, sx, sy - R * 1.4, sls, accent, 1, 0, hudTitleW(sl, sls) + 8, sls + 6);
             }
         }
     }
@@ -8569,6 +8743,7 @@ import * as tankRecords from './tankRecords.js';
             if (placeTxt && !global.died) drawPtsPops(px + PW + 10, py + rowH + footH / 2, "left", 1);
             y = py + PH + HUD.lip + 8;
         });
+        if (teamWar.on()) hudSafe("team", () => { y = teamWar.drawTopBar(ctx[2], cx, y, noteMaxW()); });
         hudSafe("notes", () => { y = drawHudNotes(y); });
         if (r.ao && r.ao.on) hudSafe("aoResult", () => { y = aoHud.drawResult(ctx[2], cx, y, aoApi()); });
         hudSafe("boss", () => {
@@ -8579,12 +8754,15 @@ import * as tankRecords from './tankRecords.js';
             bossGlide.set(r.boss && nxShows("boss", { near: newcomer.bossNear() }) ? 1 : 0);
             const bg = bossGlide.get();
             const boss = bg > 0.02, core = raidHeat.coreUp() && nxShows("core", { near: newcomer.coreNear() });
-            if (topMin.on || (!boss && !core)) return;
+            const titans = teamWar.titanCards();
+            const n = (boss ? 1 : 0) + (core ? 1 : 0) + titans.length;
+            if (topMin.on || !n) return;
             const c = ctx[2], gap = 10;
-            const W = boss && core ? Math.min(236, (global.screenWidth - 60 - gap) / 2) : Math.min(300, global.screenWidth - 60);
-            let x = Math.round(cx - (boss && core ? W * 2 + gap : W) / 2);
+            const W = n > 1 ? Math.min(236, (global.screenWidth - 60 - gap * (n - 1)) / n) : Math.min(300, global.screenWidth - 60);
+            let x = Math.round(cx - (W * n + gap * (n - 1)) / 2);
             if (boss) { drawBossBar(x, y, W, bg); x += W + gap; }
-            if (core) raidHeat.drawCoreCard(c, x, y, W, BOSS_H);
+            if (core) { raidHeat.drawCoreCard(c, x, y, W, BOSS_H); x += W + gap; }
+            for (const t of titans) { teamWar.drawTitanCard(c, x, y, W, BOSS_H, t); x += W + gap; }
             y += BOSS_H + BOSS_GAP;
         });
         // round 12: the pad timers ("You can come back in 1s") sat under your
@@ -8685,8 +8863,8 @@ import * as tankRecords from './tankRecords.js';
         const gemsW = hudTitleW(gemsTxt, 12);
         const nameTxt = String(b.name || "Boss");
         let ns = 14; while (ns > 10 && hudTitleW(nameTxt, ns) > W - 28 - gemsW - 18) ns -= 0.5;
-        hudTitle(nameTxt, x + 28, y + 13, ns, col, "left", a);
-        hudTitle(gemsTxt, x + W - 10, y + 13, 12, HUD.gold, "right", a);
+        hudLabel(nameTxt, x + 28, y + 13, ns, col, "left", a);
+        hudLabel(gemsTxt, x + W - 10, y + 13, 12, HUD.gold, "right", a);
         const bx = x + 10, bw = W - 20, bh = 8, byTop = y + 22;
         const hp = Math.max(0, Math.min(1, b.hp || 0));
         c.save();
@@ -8843,9 +9021,51 @@ import * as tankRecords from './tankRecords.js';
         }
         return y0 + H;
     }
+    function drawTwoTeamStandings() {
+        const r = global.royale;
+        const board = r.board || [];
+        const W = Math.min(262, global.screenWidth * 0.3), rowH = 22, barH = 18;
+        const x = global.screenWidth - HUD.edge - W, y0 = HUD.edge;
+        const myPlace = r.place | 0;
+        const top = board.slice(0, 3);
+        const me = myPlace > 3 ? board.find(row => !row.bot && row.place === myPlace) : null;
+        const rows = me ? top.concat([me]) : top;
+        const H = 30 + rows.length * rowH + 2;
+        standingsRect = { x: x - 8, y: y0 - 8, w: W + 16, h: H + 16 };
+        const c = ctx[2];
+        hudPanel(c, x - 6, y0 - 5, W + 12, H + 4, { fill: HUD.glass, r: HUD.r });
+        const boardTitle = (r.ao && r.ao.on) ? aoHud.standingsTitle() : "Leaderboard";
+        hudTitle(boardTitle, x + W / 2, y0 + 12, 19, HUD.head, "center");
+        drawRuleDot(c, x + W / 2 + hudTitleW(boardTitle, 19) / 2 + 14, y0 + 12);
+        pointsRuleTip(x, y0, W, H);
+        let ry = y0 + 28;
+        const tops = teamWar.boardTops();
+        const mineRow = (row) => !row.bot && row.place === myPlace && myPlace > 0;
+        const codeOf = (row) => mineRow(row) ? nameBadgeCode(myRankCode() || row.rk, true) : nameBadgeCode(row.rk, false);
+        const rkCol = rows.some(row => codeOf(row)) ? 18 : 0;
+        const best = Math.max(1, (top[0] && top[0].score) | 0);
+        for (const row of rows) {
+            const isMe = mineRow(row);
+            const barCol = teamWar.teamRowHex(row) || standingsHex(row.c);
+            const rowMid = ry + barH / 2;
+            const rk = codeOf(row);
+            if (rk) rankBadges.drawBadge(c, x + 7, rowMid, 15, rankBadges.codeToDivision(rk));
+            const hunted = tops && teamWar.isTop(tops, row);
+            const bx = x + rkCol, bw = W - rkCol - (hunted ? 16 : 0);
+            hudBar(c, bx, ry, bw, barH, Math.max(0.05, (row.score | 0) / best), barCol);
+            if (isMe) { c.save(); roundRectPath(c, bx - 1.5, ry - 1.5, bw + 3, barH + 3, (barH + 3) / 2); c.lineWidth = 2; c.strokeStyle = HUD.head; c.stroke(); c.restore(); }
+            const head = row.place > 3 ? "#" + row.place + " " : "";
+            const fit = fitStandingsText(head, shortName(row.name, 18), " - " + fmtNum(row.score | 0), bw - barH - 4);
+            drawText(fit.text, bx + bw / 2, rowMid, fit.ns, color.guiwhite, "center", true);
+            if (hunted) teamWar.huntMark(c, x + W - 6, rowMid, 5, teamWar.teamRowHex(row));
+            ry += rowH;
+        }
+        return y0 + H;
+    }
     function drawRoyaleStandings() {
         const r = global.royale;
         if (r.duos && r.teams) return drawTeamStandings();
+        if (teamWar.on()) return drawTwoTeamStandings();
         // the Crown Contest: the three crowns take the standings' place
         const aoOn = !!(r.ao && r.ao.on);
         if (crowns.active() && !aoOn) {
@@ -9599,7 +9819,7 @@ import * as tankRecords from './tankRecords.js';
             const outT = age > DUR - 500 ? 1 - (age - (DUR - 500)) / 500 : 1;
             const a = (inT * inT * (3 - 2 * inT)) * Math.max(0, outT);
             const pop = inT < 1 ? 1.2 - 0.2 * inT : 1;
-            const col = raidHeat.calloutCol(t.kind) || (t.kind === "tier5" || t.kind === "level" || t.kind === "boss" || t.kind === "coreloot" ? HUD.gold : HUD.head);
+            const col = raidHeat.calloutCol(t.kind) || teamWar.calloutCol(t.kind) || (t.kind === "tier5" || t.kind === "level" || t.kind === "boss" || t.kind === "coreloot" ? HUD.gold : HUD.head);
             // Oct 8: a compact plate in the top lane (it was a 23-unit title over the play area)
             const base = 17, size = base * pop;
             // the points ride on the sub line: one plate, two lines at most
@@ -10755,7 +10975,9 @@ import * as tankRecords from './tankRecords.js';
         else if (glyph === "skull") { c.restore(); drawSkull(c, gx, gy, 6, col); c.save(); }
         else if (glyph === "contract") { c.beginPath(); c.arc(gx, gy, 6, 0, Math.PI * 2); c.fill(); c.stroke(); c.beginPath(); c.arc(gx, gy, 2.2, 0, Math.PI * 2); c.fillStyle = HUD.ink; c.fill(); }
         else if (glyph === "mate") { c.save(); c.translate(gx, gy); c.rotate(Math.PI / 4); c.fillRect(-4.5, -4.5, 9, 9); c.strokeRect(-4.5, -4.5, 9, 9); c.restore(); }
-        else if (glyph === "crown") crowns.drawCrownIcon(c, gx, gy, 11);
+        else if (glyph === "titan") { c.restore(); teamWar.titanGlyph(c, gx, gy, 6.5, col, HUD.ink); c.save(); }
+        else if (glyph === "target") { c.restore(); teamWar.targetIcon(c, gx, gy, 6.5, col, HUD.ink); c.save(); }
+        else if (glyph === "crown") crowns.drawCrownIcon(c, gx, gy, 11, teamWar.on() && col && col[0] === "#" ? col : undefined);
         else if (glyph.startsWith("ping:")) { c.beginPath(); c.arc(gx, gy, 7, 0, Math.PI * 2); c.fill(); c.stroke(); drawPingGlyph(c, gx, gy, 5, glyph.slice(5)); }
         else { c.beginPath(); c.moveTo(gx, gy - 6); c.lineTo(gx + 6, gy + 5); c.lineTo(gx - 6, gy + 5); c.closePath(); c.fill(); c.stroke(); }
         c.restore();
@@ -10831,7 +11053,7 @@ import * as tankRecords from './tankRecords.js';
             const p = trackPos("revenge", rv.x, rv.y, 0.8);
             const s = toScreen(p.x, p.y);
             const d = Math.hypot(p.x - me.x, p.y - me.y);
-            if (!onScreen(s, -20) && d < 3600) marks.push({ pri: 2, s, col: "#ff6b5e", glyph: "skull", name: "Revenge: " + shortName(rv.name, 10), d });
+            if (!onScreen(s, -20) && d < 3600) marks.push({ pri: 2, s, col: teamWar.personHex(rv.e) || "#ff6b5e", glyph: "target", name: "Revenge: " + shortName(rv.name, 10), d });
         }
         if (r.boss && nxShows("boss", { near: newcomer.bossNear() })) {
             const p = trackPos("boss", r.boss.x, r.boss.y, 0.6);
@@ -10876,6 +11098,7 @@ import * as tankRecords from './tankRecords.js';
             }
         } catch (e) { }
         raidHeat.worldMarks(marks, toScreen, onScreen, me, trackPos, ratio);
+        try { teamWar.worldMarks(marks, toScreen, onScreen, me, trackPos); } catch (e) { void e; }
         try { crowns.worldMarks(marks, toScreen, onScreen, me, trackPos); } catch (e) { /* */ }
         // a director moment (first raids): its arrow, or its ring when in view
         try { newcomer.worldMarks(marks, toScreen, onScreen, me, c, ratio); } catch (e) { /* */ }
@@ -11252,14 +11475,15 @@ import * as tankRecords from './tankRecords.js';
         // name, is left out; earlier calls win
         const placed = [];
         for (const v of (global.vaults || [])) { const vx = T.X(v.x), vy = T.Y(v.y); placed.push({ x: vx - labelPx * 2, y: vy - labelPx * 2.6, w: labelPx * 4, h: labelPx * 1.6 }); }
-        const mapLabel = (text, mx, my, above, col) => {
-            if (labelPx < 9) return;
-            const ly = my + (above ? -1 : 1) * (above ? labelPx * 0.6 + 2 : labelPx * 0.9 + 2);
-            const w = text.length * labelPx * 0.62 + 4, h = labelPx + 3;
+        const mapLabel = (text, mx, my, above, col, force) => {
+            if (labelPx < 9 && !force) return;
+            const lp = labelPx < 9 ? 8.4 : labelPx;
+            const ly = my + (above ? -1 : 1) * (above ? lp * 0.6 + 2 : lp * 0.9 + 2);
+            const w = text.length * lp * 0.62 + 4, h = lp + 3;
             const r0 = { x: mx - w / 2, y: ly - h / 2, w, h };
             for (const q of placed) if (r0.x < q.x + q.w && r0.x + r0.w > q.x && r0.y < q.y + q.h && r0.y + r0.h > q.y) return;
             placed.push(r0);
-            drawText(text, mx, ly, labelPx * 0.9, col, "center", true, 0.85, 4);
+            drawText(text, mx, ly, lp * 0.9, col, "center", true, 0.85, 4);
         };
         // duos: your partner, a dot in your colour with a ring and their name
         const dmate = r.duos && r.duo && r.duo.mate;
@@ -11283,9 +11507,11 @@ import * as tankRecords from './tankRecords.js';
             if (!inside(mx, my)) continue;
             polyPath(c, mx, my, dotR * 1.5, 6, Math.PI / 6);
             c.fillStyle = "#12191f"; c.fill();
-            c.lineWidth = 1.6; c.strokeStyle = SHOP_ACCENT; c.stroke();
+            c.lineWidth = 1.6; c.strokeStyle = teamWar.shopHex(s, SHOP_ACCENT); c.stroke();
             gemPath(c, mx, my, dotR * 0.7);
             c.fillStyle = color.gold; c.fill();
+            const shopName = teamWar.shopMapLabel(s);
+            if (shopName) mapLabel(shopName, mx, my + dotR * 1.6, false, teamWar.shopHex(s, SHOP_ACCENT), true);
         }
         if (r.ao && r.ao.on) { try { const sc = (T.X(1000) - T.X(0)) / 1000; aoHud.drawMap(c, T.X, T.Y, sc); } catch (e) { } }
         if (r.bloom && r.bloom.until > tnow) {
@@ -11317,13 +11543,6 @@ import * as tankRecords from './tankRecords.js';
                 mapLabel(r.event.kind === "meteor" ? "METEORS" : "GEM RAIN", mx, my - er, true, r.event.kind === "meteor" ? "#ff9a5a" : "#7fb1f2");
             }
         }
-        for (const ch of (r.chests || [])) {
-            const mx = T.X(ch.x), my = T.Y(ch.y);
-            if (!inside(mx, my)) continue;
-            gemPath(c, mx, my, dotR * (ch.rare ? 1.2 : 0.95));
-            c.fillStyle = ch.rare ? "#dc8cf8" : "#f0a060";
-            c.strokeStyle = color.black; c.lineWidth = 1.2; c.fill(); c.stroke();
-        }
         const scan = (r.you && r.you.scan) || null;
         if (scan && scan.length) {
             // Ore Scanner: the vein gem as before, ringed so it reads as "found"
@@ -11343,36 +11562,38 @@ import * as tankRecords from './tankRecords.js';
         // round 12: the runaway leader's spot, pinged every 30 s (a fixed
         // point where they were, not a live track), for everyone but them
         const lp = r.lping;
-        if (lp && lp.id !== gui.playerid) {
+        if (lp && lp.id !== gui.playerid && !teamWar.markTaken(lp.id)) {
             const mx = T.X(lp.x), my = T.Y(lp.y);
             if (inside(mx, my)) {
                 const k = Math.max(0, Math.min(1, (lp.ms | 0) / 6000));
+                const lc = teamWar.personHex(lp.id) || HUD.gold;
                 c.save();
                 c.globalAlpha = 0.35 + 0.65 * k;
-                c.strokeStyle = HUD.gold; c.lineWidth = 2.2;
+                c.strokeStyle = lc; c.lineWidth = 2.2;
                 c.beginPath(); c.arc(mx, my, dotR * (2.4 + 3.2 * (1 - pulse * 0.5)), 0, Math.PI * 2); c.stroke();
-                c.fillStyle = HUD.gold; c.strokeStyle = color.black; c.lineWidth = 1.5;
+                c.fillStyle = lc; c.strokeStyle = color.black; c.lineWidth = 1.5;
                 c.beginPath(); c.arc(mx, my, dotR * 1.5, 0, Math.PI * 2); c.fill(); c.stroke();
                 c.restore();
-                drawText("#1", mx, my - dotR * 4.2, 9, HUD.gold, "center", true);
+                drawText("#1", mx, my - dotR * 4.2, 9, lc, "center", true);
             }
         }
         for (const p of (r.pings || [])) {
-            if (p.id === gui.playerid) continue;
+            if (p.id === gui.playerid || teamWar.markTaken(p.id)) continue;
             const tp = trackPos("ping" + p.id, p.x, p.y, 0.6);
             const mx = T.X(tp.x), my = T.Y(tp.y);
             if (!inside(mx, my)) continue;
+            const pc = teamWar.personHex(p.id) || "#ffb347";
             c.save();
             c.translate(mx, my);
-            c.fillStyle = "#ffb347"; c.strokeStyle = color.black; c.lineWidth = 2; c.lineJoin = "round";
+            c.fillStyle = pc; c.strokeStyle = color.black; c.lineWidth = 2; c.lineJoin = "round";
             const s2 = dotR * 2.6;
             c.beginPath(); c.moveTo(0, -s2); c.lineTo(s2, s2 * 0.8); c.lineTo(-s2, s2 * 0.8); c.closePath();
             c.fill(); c.stroke();
             c.restore();
-            if (p.streak) drawText("x" + p.streak, mx, my - dotR * 3.8, 9, "#ffb347", "center", true);
+            if (p.streak) drawText("x" + p.streak, mx, my - dotR * 3.8, 9, pc, "center", true);
             c.save();
             c.globalAlpha = 0.8;
-            c.strokeStyle = "#ffb347"; c.lineWidth = 2;
+            c.strokeStyle = pc; c.lineWidth = 2;
             c.beginPath(); c.arc(mx, my, dotR * 3.8 * pulse, 0, Math.PI * 2); c.stroke();
             c.restore();
         }
@@ -11391,6 +11612,7 @@ import * as tankRecords from './tankRecords.js';
                 mapLabel(String(r.boss.name || "BOSS").toUpperCase(), mx, my + dotR * 3.4, false, col);
             }
         }
+        try { teamWar.drawMap(c, T, inside, dotR, pulse, mapLabel, trackPos); } catch (e) { void e; }
         raidHeat.drawMap(c, T, inside, dotR, pulse, mapLabel, trackPos);
         try { crowns.drawMap(c, T, inside, dotR, pulse); } catch (e) { /* */ }
     }
@@ -12124,7 +12346,11 @@ import * as tankRecords from './tankRecords.js';
         return mapPaths;
     }
 
-    function drawPingDiamond(c, x, y, r, alpha) {
+    function enemyPingCol() {
+        const me = teamWar.on() ? teamWar.myTeam() : 0;
+        return me ? teamWar.teamHex(me === 1 ? 2 : 1) : "";
+    }
+    function drawPingDiamond(c, x, y, r, alpha, col) {
         c.save();
         c.globalAlpha = alpha;
         c.lineJoin = "round";
@@ -12137,13 +12363,36 @@ import * as tankRecords from './tankRecords.js';
         c.strokeStyle = color.black;
         c.lineWidth = Math.max(1.4, Math.min(r * 0.34, 2.5 + r * 0.1));
         c.stroke();
-        c.fillStyle = "#eb4034";
+        c.fillStyle = col || "#eb4034";
         c.fill();
-        c.beginPath();
-        c.arc(x, y - r * 0.05, r * 0.22, 0, Math.PI * 2);
-        c.fillStyle = "rgba(255,255,255,0.9)";
-        c.fill();
+        if (col) {
+            drawPingGlyph(c, x, y, r * 0.46, "enemy");
+        } else {
+            c.beginPath();
+            c.arc(x, y - r * 0.05, r * 0.22, 0, Math.PI * 2);
+            c.fillStyle = "rgba(255,255,255,0.9)";
+            c.fill();
+        }
         c.restore();
+    }
+    function drawEnemyPingsMap(c, T, inside, dotR) {
+        const now = performance.now();
+        const col = enemyPingCol();
+        for (const p of global.enemyPings) {
+            const age = now - p.at;
+            if (age > 20000) continue;
+            const mx = T.X(p.x), my = T.Y(p.y);
+            if (!inside(mx, my)) continue;
+            if (col && age < 1600) {
+                const k = (age % 800) / 800;
+                c.save();
+                c.globalAlpha = 1 - k;
+                c.strokeStyle = col; c.lineWidth = 2;
+                c.beginPath(); c.arc(mx, my, dotR * (2 + 6 * k), 0, Math.PI * 2); c.stroke();
+                c.restore();
+            }
+            drawPingDiamond(c, mx, my, dotR * 3.9, age > 19000 ? 1 - (age - 19000) / 1000 : 1, col);
+        }
     }
 
     function drawWorldWindow(c, rx, ry, rw, rh, wx0, wy0, wspan) {
@@ -12183,11 +12432,13 @@ import * as tankRecords from './tankRecords.js';
 
         if (global.roomSetup.length) {
             const Rw = global.roomSetup[0].length, Rh = global.roomSetup.length;
+            const mapTeamFloor = teamFloorOn();
             c.globalAlpha = 0.34;
             for (let ty = 0; ty < Rh; ty++) {
                 for (let tx = 0; tx < Rw; tx++) {
                     const cell = global.roomSetup[ty][tx];
                     if (!cell || cell.color === "none") continue;
+                    if (mapTeamFloor && (cell.color === "blue" || cell.color === "red")) continue;
                     let col = gameDraw.getColor(cell.color);
                     if (col === color.white) continue;
                     if (cell.color === "blue") {
@@ -12213,7 +12464,7 @@ import * as tankRecords from './tankRecords.js';
             c.scale(s, s);
             c.fillStyle = WORLD_ART.mapFloor;
             c.fill(paths.dead);
-            const BI = paths.aliveBio && window.DWBiomes ? window.DWBiomes.BIOMES : null;
+            const BI = paths.aliveBio && window.DWBiomes ? (tr.biomeTable ? tr.biomeTable() : window.DWBiomes.BIOMES) : null;
             if (BI) {
                 // rock tinted by biome, kept close to the old grey so pings,
                 // pads and players still sit on top
@@ -12253,7 +12504,7 @@ import * as tankRecords from './tankRecords.js';
                 c.restore();
             }
 
-            const vc = v.team === -2 ? color.red : color.blue;
+            const vc = teamWar.on() ? teamWar.vaultMapCol(v, color.blue, color.red) : v.team === -2 ? color.red : color.blue;
             c.beginPath();
             c.arc(vx, vy, vr, 0, Math.PI * 2);
             c.fillStyle = vc;
@@ -12285,6 +12536,7 @@ import * as tankRecords from './tankRecords.js';
         abilityFx.drawMapRadar(c, T);
         const inside = (x, y) => x > rx - 8 && x < rx + rw + 8 && y > ry - 8 && y < ry + rh + 8;
         const teamCol = myTeamColor();
+        if (royaleActive()) { try { teamWar.drawMapUnder(c, T, inside); } catch (e) { void e; } }
 
         if (!royaleLobbyPhase()) for (const o of global.outposts) {
             const st = global.outpostState.find(s => s.id === o.id) || {};
@@ -12371,16 +12623,12 @@ import * as tankRecords from './tankRecords.js';
             if (inside(lx, ly)) drawCrown(lx, ly + dotR * 1.2, dotR * 3.8, 1, c);
         }
 
-        const nowPing = performance.now();
-        for (const p of global.enemyPings) {
-            const age = nowPing - p.at;
-            if (age > 20000) continue;
-            const mx = T.X(p.x), my = T.Y(p.y);
-            if (!inside(mx, my)) continue;
-            drawPingDiamond(c, mx, my, dotR * 3.9, age > 19000 ? 1 - (age - 19000) / 1000 : 1);
-        }
+        const pingsOnTop = teamWar.on();
+        if (!pingsOnTop) drawEnemyPingsMap(c, T, inside, dotR);
         drawDuoPingsMap(c, T, inside, dotR);
+        const arrasMates = !teamWar.skipArrasMates();
         for (const t of global.teammates) {
+            if (!arrasMates) break;
             if (t.id === gui.playerid) continue;
             // Tutorial: learners share the blue team but live in separate
             // plots, so never show another learner's position
@@ -12423,30 +12671,13 @@ import * as tankRecords from './tankRecords.js';
                 c.stroke();
                 c.restore();
             }
-            // Revenge mark: red diamond + pulse ring, tracking live.
             const revm = (rr.you && rr.you.revenge) || null;
-            if (revm && revm.alive && !revm.tough && isFinite(revm.x) && isFinite(revm.y)) {
+            if (revm && revm.alive && !revm.tough && isFinite(revm.x) && isFinite(revm.y) && !teamWar.markTaken(revm.e)) {
                 const mx = T.X(revm.x), my = T.Y(revm.y);
                 if (inside(mx, my)) {
-                    const s2 = dotR * 2.4;
-                    c.save();
-                    c.translate(mx, my);
-                    c.rotate(Math.PI / 4);
-                    c.fillStyle = "#e03e41";
-                    c.strokeStyle = color.black;
-                    c.lineWidth = 2;
-                    c.beginPath();
-                    c.rect(-s2, -s2, s2 * 2, s2 * 2);
-                    c.fill();
-                    c.stroke();
-                    c.restore();
-                    c.save();
-                    c.beginPath();
-                    c.arc(mx, my, dotR * 3.6 * pulse, 0, Math.PI * 2);
-                    c.strokeStyle = "#e03e41";
-                    c.lineWidth = 2.2;
-                    c.stroke();
-                    c.restore();
+                    const rc = teamWar.personHex(revm.e) || "#e03e41";
+                    teamWar.targetIcon(c, mx, my, dotR * 2.3 * (0.94 + 0.06 * pulse), rc, color.black);
+                    drawText("Revenge", Math.round(mx), Math.round(my + dotR * 2.6 + 6), Math.max(8, dotR * 2), rc, "center", true);
                 }
             }
         }
@@ -12454,14 +12685,14 @@ import * as tankRecords from './tankRecords.js';
         // the bounty: a gold diamond wherever it is
         if (royaleActive()) {
             const bm = (global.royale || {}).bounty;
-            if (bm && isFinite(bm.x) && isFinite(bm.y)) {
+            if (bm && isFinite(bm.x) && isFinite(bm.y) && !teamWar.markTaken(bm.e)) {
                 const mx = T.X(bm.x), my = T.Y(bm.y);
                 if (inside(mx, my)) {
                     const s2 = dotR * 2.2;
                     c.save();
                     c.translate(mx, my);
                     c.rotate(Math.PI / 4);
-                    c.fillStyle = HUD.gold;
+                    c.fillStyle = teamWar.personHex(bm.e) || HUD.gold;
                     c.strokeStyle = color.black;
                     c.lineWidth = 2;
                     c.beginPath();
@@ -12473,6 +12704,7 @@ import * as tankRecords from './tankRecords.js';
             }
         }
         if (royaleActive()) drawRoyaleMapExtras(T, rx, ry, rw, rh, dotR);
+        if (pingsOnTop) drawEnemyPingsMap(c, T, inside, dotR);
         const px = T.X(global.player.renderx), py = T.Y(global.player.rendery);
         if (inside(px, py)) {
             const ang = Math.atan2(global.target.y, global.target.x);
@@ -12714,6 +12946,7 @@ import * as tankRecords from './tankRecords.js';
         }
         for (const v of global.vaults) {
             if (royaleLobbyPhase()) break;
+            if (teamWar.outpostWorld(v)) continue;
             const mx = T.X(v.x), my = T.Y(v.y);
             const vr = Math.max(6, v.r * (bm._panel.s || 1));
             const vName = (v.x === 0 && v.y === 0 && royaleMode()) ? "Gem Nest" : (v.name || "Vault");
@@ -12785,6 +13018,8 @@ import * as tankRecords from './tankRecords.js';
         c.restore();
     }
     function drawRoyaleFTabBody(x, y, w, h, tab) {
+        const twoTeam = tab === "standings" && teamWar.on();
+        const twTops = twoTeam ? teamWar.boardTops() : null;
         const rows = tab === "feed"
             ? (global.royale.feed || []).slice().reverse().map(f => {
                 let line = null;
@@ -12798,9 +13033,10 @@ import * as tankRecords from './tankRecords.js';
                     me: r.id === gui.playerid || (!r.bot && r.place > 0 && r.place === (global.royale.place | 0)),
                 }))
                 : royaleBoardRows().map((r, i) => ({
-                    num: (i + 1) + ".", name: r.name || "Unnamed", rk: r.rk | 0, ns: r.ns | 0, nc: r.nc,
+                    num: (i + 1) + ".", name: r.name || "Unnamed", rk: r.rk | 0, ns: r.ns | 0, nc: twoTeam ? (teamWar.teamRowHex(r) || r.nc) : r.nc,
                     extra: util.formatLargeNumber(r.score || r.gems | 0) + " pts  " + (r.kills | 0) + " kills",
                     me: r.id === gui.playerid || (!r.bot && r.place > 0 && r.place === (global.royale.place | 0)),
+                    hunted: twoTeam && teamWar.isTop(twTops, r),
                 }));
         if (!rows.length) {
             drawText(tab === "alive" ? "Nobody is alive" : "Nobody here yet", x + w / 2, y + h / 2, 16, color.guiwhite, "center");
@@ -12817,10 +13053,16 @@ import * as tankRecords from './tankRecords.js';
         // column (only when someone has a rank), then the name
         for (const r of rows) if (r.num) r.rk = nameBadgeCode(r.me ? myRankCode() || r.rk : r.rk, r.me);
         const rkCol = rows.some(r => r.rk) ? 24 : 0;
-        const numW = rows[0] && rows[0].num ? measureText(rows.length + ".", 14) + 8 : 0;
+        const numW = rows.some(r => r.num) ? measureText(rows.length + ".", 14) + 8 : 0;
         for (let i = 0; i < rows.length && i < Math.floor((h - 20 - headH) / rowH); i++) {
             const ry = y + 16 + headH + i * rowH;
-            const col = rows[i].me ? meHex : color.guiwhite;
+            const col = rows[i].teamCol || (rows[i].me ? meHex : color.guiwhite);
+            if (twoTeam && (rows[i].me || rows[i].mine)) {
+                ctx[2].save();
+                roundRectPath(ctx[2], x + 8, ry - rowH / 2 + 2, w - 16, rowH - 4, 6);
+                ctx[2].fillStyle = HUD.raised; ctx[2].fill();
+                ctx[2].restore();
+            }
             // your row: your colour on the name only, nothing behind it
             if (rows[i].num) {
                 drawText(rows[i].num, x + 18 + numW - 8, ry, 14, col, "right");
@@ -12829,6 +13071,7 @@ import * as tankRecords from './tankRecords.js';
                 drawText(fSn.text, x + 18 + numW + rkCol, ry, 14, fSn.fill, "left");
             } else drawText(rows[i].name, x + 18, ry, 14, col, "left");
             if (rows[i].extra) drawText(rows[i].extra, x + w - 18, ry, 14, color.gold, "right");
+            if (rows[i].hunted) teamWar.huntMark(ctx[2], x + w - 18 - measureText(rows[i].extra || "", 14) - 14, ry - 5, 5.5, rows[i].nc);
         }
     }
 
@@ -13129,11 +13372,10 @@ import * as tankRecords from './tankRecords.js';
         if (global.mobile && global.screenHeight > global.screenWidth) y0 = Math.max(y0, (hudTopBottom | 0) + 8);
         // total banked, directly over the HP / shield bars
         const banked = global.gems ? Math.max(0, global.gems.banked | 0) : 0;
-        const bankTxt = "Banked " + fmtNum(banked), bankH = 14;
-        const bankY = y0 - bankH - 2;
-        let bs = 12;
-        while (bs > 8 && hudTitleW(bankTxt, bs) > w - 8) bs -= 0.5;
-        hudTitle(bankTxt, x + w / 2, bankY + bankH / 2, bs, HUD.gold, "center", 1, c);
+        const bankTxt = "Banked " + fmtNum(banked), bankH = Math.max(14, sH || 14);
+        const bankY = y0 - bankH - gap;
+        hudBar(c, x, bankY, w, bankH, 1, HUD.gold);
+        vitalLabel(c, bankTxt, x, bankY, w, bankH);
         const hf = me.render && me.render.health ? me.render.health.get() : me.health;
         const sf = me.render && me.render.shield ? me.render.shield.get() : me.shield;
         let y = y0;
@@ -14578,7 +14820,7 @@ import * as tankRecords from './tankRecords.js';
         const cause = global.finalCause || "";
         const killedBy = cause === "raidend" ? "The raid ended"
             : cause === "rock" ? "Crushed by the living rock"
-            : cause === "base" ? "Shot by the enemy base"
+            : cause === "base" ? teamWar.baseDeathText("Shot by the enemy base")
             : cause === "core" ? "Killed by the Core"
             : global.finalKillers.length
                 ? "Killed by " + global.finalKillers.join(" and ")
@@ -14675,7 +14917,7 @@ import * as tankRecords from './tankRecords.js';
         if (cause === "raidend") return "The raid ended";
         if (cause === "rock") return "Crushed by the rock";
         if (cause === "storm") return "Lost in the storm";
-        if (cause === "base") return "Shot by a base";
+        if (cause === "base") return teamWar.baseDeathText("Shot by a base");
         if (cause === "core") return "Killed by the Core";
         const names = global.finalKillers || [];
         return names.length ? "Killed by " + names.join(" and ") : "";
@@ -15124,6 +15366,7 @@ import * as tankRecords from './tankRecords.js';
 
         drawFloor(px, py, ratio, tick);
         try { raidHeat.drawFloor(ctx[0], px, py, ratio); } catch (e) { /* never break the frame */ }
+        try { teamWar.drawFloor(ctx[0], px, py, ratio); } catch (e) { void e; }
         try { abilityFx.drawFloor(ctx[0], px, py, ratio); } catch (e) { /* never break the frame */ }
         drawEntities(px, py, ratio, tick, spacing);
         drawOutpostLabels(px, py, ratio);
@@ -15185,6 +15428,7 @@ import * as tankRecords from './tankRecords.js';
             drawSatchelDanger();
             drawTeamBankBar();
             drawRoyaleHUD();
+            try { teamWar.drawIntro(ctx[2], hudTopBottom); } catch (e) { void e; }
             if (!global.died) { try { drawChatPanel(); } catch (e) { chatPanelRect = null; chatPanelErr = String(e && e.message); } }
             hudLanes();
             drawKillCallouts();
@@ -15211,6 +15455,7 @@ import * as tankRecords from './tankRecords.js';
                 try { drawRaidPerks(); } catch (e) { /* never break the frame */ }
                 drawVaultUI();
                 drawShopUI();
+                try { teamWar.drawPadPanel(ctx[2]); } catch (e) { void e; }
             }
             if (!finaleHud) drawMinimapAndDebug(spacing, alcoveSize, global.GRAPHDATA, tick);
             // Tutorial: no leaderboard (the server sends an empty one anyway)
@@ -15618,6 +15863,7 @@ import * as tankRecords from './tankRecords.js';
             };
             document.body.appendChild(fsBtn);
         }
+        teamWar.inviteButton();
 
         // Raid spectate/death controls are DOM buttons, like the gear: canvas
         // clickables miss (map drag eats mousedown, auto-respawn clears died
@@ -15635,6 +15881,7 @@ import * as tankRecords from './tankRecords.js';
                 fsBtn.style.display = show;
                 if (show !== "none") fsBtn.style.left = (btn.offsetLeft + btn.offsetWidth + 8) + "px";
             }
+            try { teamWar.placeInviteButton(show !== "none"); } catch (e) { void e; }
             try { updateRoyaleDomButtons(); } catch { /* */ }
         }, 250);
 
@@ -15824,6 +16071,11 @@ import * as tankRecords from './tankRecords.js';
             return { mode: "connect", title: "Connecting…",
                 line: msg || (slow ? "This is taking a while, please hang on." : String(global.tips || "")),
                 back: true, dots: true };
+        }
+        const joinAt = global.joinStartAt || 0;
+        if (global.gameStart && !global.died && !global.raidQueued && joinAt > 0 && now - joinAt < 12000 &&
+            ((global.spawnedAt || 0) < joinAt || (global.terrainAt || 0) < joinAt)) {
+            return { mode: "connect", title: "Connecting…", line: "Getting the world ready…", back: true, dots: true };
         }
         // in the game, not spawned yet
         if (global.gameStart && !global.died && global.raidQueued) {

@@ -68,12 +68,12 @@ function getShops() {
     if (shops && shops.length) return shops;
     const tg = global.gameManager && global.gameManager.terrainGrid;
     if (!tg || !tg.shopSites || !tg.shopSites.length) return [];
-    shops = tg.shopSites.map(s => ({ id: s.id, name: s.name, x: s.x, y: s.y, r: s.r || PAD_RADIUS, color: s.color || "#7fb1f2", kind: 'shop' }));
+    shops = tg.shopSites.map(s => ({ id: s.id, name: s.name, x: s.x, y: s.y, r: s.r || PAD_RADIUS, color: s.color || "#7fb1f2", kind: 'shop', team: s.team || 0 }));
     return shops;
 }
 
 function snapshot() {
-    return getShops().map(s => ({ id: s.id, name: s.name, x: s.x, y: s.y, r: s.r, c: s.color }));
+    return getShops().map(s => ({ id: s.id, name: s.name, x: s.x, y: s.y, r: s.r, c: s.color, team: s.team || undefined }));
 }
 
 const abilities = require('./abilities.js');
@@ -875,7 +875,7 @@ function tick(actors) {
             }
             continue;
         }
-        for (const s of list) if (padGeom.insidePad(s, body.x, body.y, 0)) { s._onPad.push(body); break; }
+        for (const s of list) if ((!s.team || s.team === body.team) && padGeom.insidePad(s, body.x, body.y, 0)) { s._onPad.push(body); break; }
     }
     // pass 2: one shopper per pad
     for (const s of list) {

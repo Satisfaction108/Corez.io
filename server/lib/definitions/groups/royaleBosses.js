@@ -2,7 +2,7 @@
 // real guns, props for silhouette. Tuned for one or two determined level-45
 // tanks over a couple of minutes. terrain/bosses.js TUNING softens health,
 // regen and every shot on top of these numbers.
-const { combineStats, skillSet, weaponArray } = require('../facilitators.js');
+const { combineStats, skillSet, weaponArray, makeTurret } = require('../facilitators.js');
 const { base } = require('../constants.js');
 const g = require('../gunvals.js');
 
@@ -61,7 +61,7 @@ Class.royaleVaultWarden = {
             POSITION: [16, 9, 1, 0, 0, 22.5, 0],
             PROPERTIES: {
                 SHOOT_SETTINGS: combineStats([g.basic, g.pounder, { reload: 2.1, damage: 0.9, speed: 0.9, maxSpeed: 0.9, health: 1.2 }]),
-                TYPE: "bullet", COLOR: "#4c4f5c",
+                TYPE: "bullet",
             },
         }, 8),
         ...weaponArray([
@@ -70,7 +70,7 @@ Class.royaleVaultWarden = {
                 POSITION: [2, 7, 1.3, 11, 0, 0, 0],
                 PROPERTIES: {
                     SHOOT_SETTINGS: combineStats([g.trap, g.setTrap, { reload: 2.9, health: 1.3, damage: 0.5 }]),
-                    TYPE: "unsetTrap", STAT_CALCULATOR: "block", COLOR: "#4c4f5c",
+                    TYPE: "unsetTrap", STAT_CALCULATOR: "block",
                 },
             },
         ], 8),
@@ -103,23 +103,23 @@ Class.royaleMagmaDrillhead = {
     GUNS: [
         {
             POSITION: [24, 12, 1, 0, -8, 0, 0],
-            PROPERTIES: { SHOOT_SETTINGS: combineStats([g.basic, g.pounder, g.destroyer, { reload: 2.1, damage: 0.6, speed: 0.9, maxSpeed: 0.9 }]), TYPE: "bullet", COLOR: "#3a2120" },
+            PROPERTIES: { SHOOT_SETTINGS: combineStats([g.basic, g.pounder, g.destroyer, { reload: 2.1, damage: 0.6, speed: 0.9, maxSpeed: 0.9 }]), TYPE: "bullet" },
         },
         {
             POSITION: [24, 12, 1, 0, 8, 0, 0.5],
-            PROPERTIES: { SHOOT_SETTINGS: combineStats([g.basic, g.pounder, g.destroyer, { reload: 2.1, damage: 0.6, speed: 0.9, maxSpeed: 0.9 }]), TYPE: "bullet", COLOR: "#3a2120" },
+            PROPERTIES: { SHOOT_SETTINGS: combineStats([g.basic, g.pounder, g.destroyer, { reload: 2.1, damage: 0.6, speed: 0.9, maxSpeed: 0.9 }]), TYPE: "bullet" },
         },
         {
             POSITION: [18, 6, 1, 4, -2.5, 0, 0.25],
-            PROPERTIES: { SHOOT_SETTINGS: combineStats([g.basic, g.machineGun, { reload: 1.6, damage: 0.5 }]), TYPE: "bullet", COLOR: "#3a2120" },
+            PROPERTIES: { SHOOT_SETTINGS: combineStats([g.basic, g.machineGun, { reload: 1.6, damage: 0.5 }]), TYPE: "bullet" },
         },
         {
             POSITION: [18, 6, 1, 4, 2.5, 0, 0.75],
-            PROPERTIES: { SHOOT_SETTINGS: combineStats([g.basic, g.machineGun, { reload: 1.6, damage: 0.5 }]), TYPE: "bullet", COLOR: "#3a2120" },
+            PROPERTIES: { SHOOT_SETTINGS: combineStats([g.basic, g.machineGun, { reload: 1.6, damage: 0.5 }]), TYPE: "bullet" },
         },
         ...[-7, 0, 7].map((y, i) => ({
             POSITION: [14, 8, 1, -7, y, 180, i * 0.33],
-            PROPERTIES: { SHOOT_SETTINGS: combineStats([g.basic, g.triAngle, g.thruster, { reload: 0.9 }]), TYPE: "bullet", COLOR: "#3a2120" },
+            PROPERTIES: { SHOOT_SETTINGS: combineStats([g.basic, g.triAngle, g.thruster, { reload: 0.9 }]), TYPE: "bullet" },
         })),
     ],
     TURRETS: [
@@ -186,7 +186,7 @@ Class.royaleShardWraith = {
             POSITION: [22, 5.5, 1, 0, 0, 0, 0],
             PROPERTIES: {
                 SHOOT_SETTINGS: combineStats([g.basic, g.sniper, { reload: 2.8, damage: 0.9, speed: 1.3, maxSpeed: 1.3, health: 1.4 }]),
-                TYPE: "bullet", COLOR: "#3a1a3a",
+                TYPE: "bullet",
             },
         }, 4),
     ],
@@ -287,4 +287,70 @@ Class.royaleCoreDrone = {
     DRAW_HEALTH: true,
     HITS_OWN_TYPE: "droneCollision",
     BODY: { PENETRATION: 1.2, PUSHABILITY: 0.6, ACCELERATION: 0.085, HEALTH: 30, DAMAGE: 2, SPEED: 0, RANGE: 1000, DENSITY: 0.03, RESIST: 1, FOV: 0.5 },
+};
+
+Class.royaleTitanPlate = { SHAPE: 6, COLOR: "#3d3f4a", STROKE_WIDTH: 1.4 };
+Class.royaleTitanCoreBlue = { SHAPE: 6, COLOR: "blue", STROKE_WIDTH: 1.2 };
+Class.royaleTitanCoreRed = { SHAPE: 6, COLOR: "red", STROKE_WIDTH: 1.2 };
+
+const titanClass = (team) => ({
+    PARENT: "royaleBossBase",
+    LABEL: "Titan",
+    NAME: team === "blue" ? "Blue Titan" : "Red Titan",
+    COLOR: team,
+    SHAPE: 6,
+    SIZE: 56,
+    DANGER: 10,
+    CONTROLLERS: [["nearestDifferentMaster", { lockThroughWalls: true }], "titanMarch"],
+    FACING_TYPE: ["smoothToTarget", { smoothness: 12 }],
+    ACCEPTS_SCORE: false,
+    MAX_CHILDREN: 4,
+    BODY: { HEALTH: base.HEALTH * 15, SHIELD: base.SHIELD * 0.1, DAMAGE: base.DAMAGE * 0.9, RESIST: 1.15, SPEED: base.SPEED * 0.46, ACCELERATION: 0.6, REGEN: base.REGEN * 0.004, DENSITY: 12, FOV: 1.5, PUSHABILITY: 0 },
+    GUNS: [
+        {
+            POSITION: [21, 13, 1, 0, 0, 0, 0],
+            PROPERTIES: { SHOOT_SETTINGS: combineStats([g.basic, g.pounder, g.destroyer, { reload: 1.8, damage: 0.42, speed: 1, maxSpeed: 1, health: 1 }]), TYPE: "bullet" },
+        },
+        ...[120, 240].map((angle, i) => ({
+            POSITION: [16, 9, 1, 0, 0, angle, 0.33 + i * 0.33],
+            PROPERTIES: { SHOOT_SETTINGS: combineStats([g.basic, g.pounder, { reload: 1.6, damage: 0.4, speed: 1, maxSpeed: 1 }]), TYPE: "bullet" },
+        })),
+        ...[60, 300].map(angle => ({
+            POSITION: [5, 10, 1.25, 8.5, 0, angle, 0],
+            PROPERTIES: {
+                SHOOT_SETTINGS: combineStats([g.drone, g.nestKeeper, { reload: 1.6, speed: 1.4, maxSpeed: 1.4, health: 1.2, damage: 0.7 }]),
+                TYPE: ["drone", { LABEL: "Titan Drone", COLOR: team, DRAW_HEALTH: true }],
+                AUTOFIRE: true,
+                STAT_CALCULATOR: "drone",
+            },
+        })),
+    ],
+    TURRETS: [
+        ...[90, 210, 330].map(angle => ({ POSITION: [7, 10.5, 0, angle, 160, 1], TYPE: ["autoTurret", { INDEPENDENT: true, COLOR: team }] })),
+        { POSITION: [11, 0, 0, 0, 360, 2], TYPE: ["autoTurret", { INDEPENDENT: true, COLOR: team }] },
+    ],
+    PROPS: [
+        { POSITION: [14, 0, 0, 30, 1], TYPE: "royaleTitanPlate" },
+        { POSITION: [9, 0, 0, 30, 1], TYPE: team === "blue" ? "royaleTitanCoreBlue" : "royaleTitanCoreRed" },
+    ],
+});
+Class.royaleTitanBlue = titanClass("blue");
+Class.royaleTitanRed = titanClass("red");
+
+Class.royaleBaseSwarmTurret = makeTurret({
+    GUNS: [
+        { POSITION: [5, 4.5, 0.6, 7, 2, 0, 0], PROPERTIES: { SHOOT_SETTINGS: combineStats([g.swarm, g.baseProtector, { speed: 0.5, range: 0.5 }]), TYPE: "baseSwarmTurret_swarm", STAT_CALCULATOR: "swarm" } },
+        { POSITION: [5, 4.5, 0.6, 7, -2, 0, 0], PROPERTIES: { SHOOT_SETTINGS: combineStats([g.swarm, g.baseProtector, { speed: 0.5, range: 0.5 }]), TYPE: "baseSwarmTurret_swarm", STAT_CALCULATOR: "swarm" } },
+        { POSITION: [5, 4.5, 0.6, 7.5, 0, 0, 0.75], PROPERTIES: { SHOOT_SETTINGS: combineStats([g.swarm, g.baseProtector, { speed: 0.4, range: 0.5 }]), TYPE: "baseSwarmTurret_swarm" } },
+    ],
+}, { label: "Protector", independent: true, fov: 0.42, aiSettings: { NO_LEAD: true, CHASE: true, IGNORE_SHAPES: true } });
+
+Class.royaleBaseProtector = {
+    PARENT: "baseProtector",
+    LABEL: "Base",
+    SIZE: 56,
+    TURRETS: [
+        { POSITION: [25, 0, 0, 0, 360, 0], TYPE: "dominationBody" },
+        ...weaponArray({ POSITION: [12, 7, 0, 45, 100, 0], TYPE: "royaleBaseSwarmTurret" }, 4),
+    ],
 };

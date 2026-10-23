@@ -914,6 +914,28 @@ body.mobile .hero-loop { display: none; }
     color: var(--sel);
     text-shadow: none;
 }
+.mode-badge {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    line-height: 1;
+    padding: 4px 8px 3px;
+    border: 2px solid #1b1510;
+    border-radius: 7px;
+    background: #1b1510;
+    box-shadow: 0 2px 0 rgba(0,0,0,.22);
+    color: #f1e8d4;
+    font: 400 15px/1 var(--display);
+    letter-spacing: .04em;
+    text-shadow: none;
+}
+[data-theme="dark"] .mode-badge { border-color: rgba(241,232,212,.22); }
+.mode-badge[hidden] { display: none; }
+.mode-badge .mb-blue { color: #5ea6ff; }
+.mode-badge .mb-red { color: #ff6378; }
+.mode-badge.mode-ffa { color: #ffd257; }
+.region-dropdown-trigger .mode-badge { margin-left: -2px; }
+.region-option .mode-badge { margin-left: auto; }
 .region-option .region-count:not(:empty)::before { content: "("; font-weight: 700; }
 .region-option .region-count:not(:empty)::after { content: ")"; font-weight: 700; }
 
@@ -4645,11 +4667,13 @@ body:has(#homeSettingsPanel.open, #homeChangelogPanel.open, #contributorsPanel.o
 html.dw-fs .dw-fs-toggle .fs-off { display: inline; }
 #ingameFullscreenBtn { width: 42px; }
 #ingameFullscreenBtn .dw-ic { width: 24px; height: 24px; }
+#ingameInviteBtn { position: fixed; top: 10px; z-index: 30; width: 42px; min-width: 0; height: 42px; padding: 0 0 4px; display: none; }
+#ingameInviteBtn .dw-ic { width: 25px; height: 25px; }
 
 /* ── On CrazyGames (index.html sets html.dw-cg): nothing that leaves their
    site. Players are guests there; accounts and invites live on corez.io. ── */
 html.dw-cg .social-buttons, html.dw-cg .contrib-foot, html.dw-cg .ev-discord,
-html.dw-cg #inviteBtn, html.dw-cg #accountChip, html.dw-cg .wl-login-row,
+html.dw-cg #inviteBtn, html.dw-cg #ingameInviteBtn, html.dw-cg #accountChip, html.dw-cg .wl-login-row,
 html.dw-cg .wl-sub, html.dw-cg .wl-or, html.dw-cg .wl-embed-note { display: none !important; }
 
 /* ── Framed on a portal (index.html sets html.dw-embed) ── */

@@ -50,7 +50,7 @@ const DIR_X = 0.75, DIR_Y = 0.66, DIR_L = Math.hypot(DIR_X, DIR_Y);
 const TANK_R = 30;
 
 const drops = [];
-for (let i = 0; i < 12; i++) drops.push({ on: false, born: 0, x: 0, y: 0, id: -1, r: 135, ms: 900, hit: false, H: 520, sparkAt: 0, vis: false, crate: false, rock: false, size: 40, far: false, boom: false });
+for (let i = 0; i < 12; i++) drops.push({ on: false, born: 0, x: 0, y: 0, id: -1, r: 135, ms: 900, hit: false, H: 520, sparkAt: 0, vis: false, crate: false, rock: false, size: 40, far: false, boom: false, tint: "", team: 0 });
 // recent big impacts by someone else: past BIG_CAP in BIG_MS, the light version
 const BIG_CAP = 3, BIG_MS = 700, FAR = 1700;
 const CAM_WAIT_MS = 4000;
@@ -75,7 +75,7 @@ let craterI = 0;
 // vis: only a picture (a resume after a reload): the keys stay live
 // kind 'crate' (a supply crate) or 'meteor': no entity, this draws it itself;
 // size: the crate's hull radius, so the marker closes on its exact footprint
-export function start(x, y, id, r, ms, vis, kind, size) {
+export function start(x, y, id, r, ms, vis, kind, size, tint, team) {
     const d = drops[dropI]; dropI = (dropI + 1) % drops.length;
     // a newer drop for the same tank replaces the old one
     for (const o of drops) if (o.on && o.id === id) o.on = false;
@@ -85,7 +85,12 @@ export function start(x, y, id, r, ms, vis, kind, size) {
     d.H = d.ms > 1200 ? 560 : 380;
     d.hit = false; d.sparkAt = 0; d.vis = !!vis; d.crate = kind === 'crate' || kind === true; d.rock = kind === 'meteor';
     d.size = size > 0 ? size : 40;
+    d.tint = d.crate && typeof tint === "string" ? tint : "";
+    d.team = d.tint ? team | 0 : 0;
     d.boom = false;
+    d.from = d.ms > 1500 ? JM.DROP_ZOOM_FROM : 0.5;
+    d.big = d.ms >= 1800;
+    d.camAt = 0;
     // a resume's picture comes with the spawn, before the view has got to
     // the tank: it waits for the camera (at most CAM_WAIT_MS) so the whole
     // fall is seen, not a black screen and a landing
@@ -112,6 +117,38 @@ function find(id) {
     for (const d of drops) if (d.on && d.id === id) { camWait(d, performance.now()); return d; }
     return null;
 }
+const CLAIM_MS = 1500, CLAIM_R = 140, LATE_MS = 40, MIN_FALL_MS = 450;
+function spawnDrop(now) {
+    const sp = global.spawnedAt || -1e9, loc = global.player.loc;
+    if (!loc || now - sp > CLAIM_MS) return null;
+    let best = null, bestD = CLAIM_R;
+    for (const d of drops) {
+        if (!d.on || d.crate || d.rock || d.self || now - d.born >= d.ms) continue;
+        if (d.born < sp - CLAIM_MS) continue;
+        const dist = Math.hypot(d.x - loc.x, d.y - loc.y);
+        if (dist <= bestD) { best = d; bestD = dist; }
+    }
+    return best;
+}
+function claim(d, now) {
+    if (!d.self) { d.self = true; d.H /= OUT_H; }
+    if (!d.camAt) {
+        d.camAt = now;
+        const late = now - d.born;
+        if (late > LATE_MS && late < d.ms) {
+            const land = d.born + d.ms;
+            d.born = now;
+            d.ms = Math.max(MIN_FALL_MS, land - now);
+        }
+    }
+    return d;
+}
+function ownDrop() {
+    if (global.died) return null;
+    const now = performance.now();
+    const d = find(gui.playerid) || spawnDrop(now);
+    return d ? claim(d, now) : null;
+}
 
 // the entity pass: where the falling tank is drawn, as an offset from its spot
 const fallOut = { dx: 0, dy: 0, s: 1, h: 0 };
@@ -135,19 +172,18 @@ export function camZoom(ratio) {
     return (global.dropZoom = zoomNow(ratio));
 }
 function zoomNow(ratio) {
-    if (!zoomOn() || global.died) return 1;
-    const d = find(gui.playerid);
-    if (!d) return 1;
+    const d = ownDrop();
+    if (!d || !zoomOn()) return 1;
     const age = performance.now() - d.born;
     if (age > d.ms + 400) return 1;
     // a respawn starts lower than the first drop; gentle settings lower still
-    const from = gentle() ? 0.82 : d.ms > 1500 ? JM.DROP_ZOOM_FROM : 0.5;
+    const from = gentle() ? 0.82 : d.from;
     let z = JM.dropZoom(age / d.ms, Math.max(0, age - d.ms), from);
     if (gentle()) z = Math.min(z, 1);
     if (z < 1 && ratio > 0) {
         // a little past the room is fine, the haze's edge covers that
         const half = (global.gameWidth || 0) / 2 + 450;
-        const f = age < d.ms ? fallOf(gui.playerid) : null;
+        const f = age < d.ms ? fallOf(d.id) : null;
         const ex = JM.edgeZoom(global.screenWidth / 2, ratio, half, d.x + (f ? f.dx : 0));
         const ey = JM.edgeZoom(global.screenHeight / 2, ratio, half, d.y + (f ? f.dy : 0));
         z = Math.max(z, Math.min(1, Math.max(ex, ey)));
@@ -156,41 +192,41 @@ function zoomNow(ratio) {
 }
 // how high up your own drop still is (0 on the ground), for the haze
 function altitude(now) {
-    const d = find(gui.playerid);
-    if (!d || global.died) return 0;
+    const d = ownDrop();
+    if (!d) return 0;
     const age = now - d.born;
     return age < d.ms ? heightOf(d, age / d.ms) : 0;
 }
 export function falling() {
-    const d = find(gui.playerid);
+    const d = ownDrop();
     return !!d && performance.now() - d.born < d.ms;
 }
 // the camera rides the falling tank: world offset from the landing spot
 const camOut = { dx: 0, dy: 0 };
 export function camOffset() {
-    if (global.died) return null;
-    const f = fallOf(gui.playerid);
+    const d = ownDrop();
+    const f = d ? fallOf(d.id) : null;
     if (!f) return null;
     camOut.dx = f.dx; camOut.dy = f.dy;
     return camOut;
 }
 // no keys, clicks or sticks reach the server until the hit
 export function inputHeld() {
-    const d = find(gui.playerid);
-    return !!d && !d.vis && !global.died && performance.now() - d.born < d.ms;
+    const d = ownDrop();
+    return !!d && !d.vis && performance.now() - d.born < d.ms;
 }
 // when your own landing happens (0 when you're not falling)
 export function landAt() {
-    const d = find(gui.playerid);
-    if (!d || global.died) return 0;
+    const d = ownDrop();
+    if (!d) return 0;
     const at = d.born + d.ms;
     return at > performance.now() ? at : 0;
 }
 
 function impact(d) {
-    const self = d.id === gui.playerid;
+    const self = d.self;
     // a first drop of the raid (the long fall) gets the full show
-    const big = !d.crate && !d.rock && d.ms >= 1800;
+    const big = !d.crate && !d.rock && d.big;
     const x = d.x, y = d.y;
     if (d.rock) {
         // a meteor going off: fire, chunks, a shove of air
@@ -284,7 +320,7 @@ export function drawGround(c, px, py, ratio) {
         camWait(d, now);
         if (!active(d, now)) { if (d.on && now - d.born > d.ms + 1400) d.on = false; continue; }
         const age = now - d.born;
-        const self = d.id === gui.playerid;
+        const self = d.self;
         const gx = ratio * d.x - px + cx, gy = ratio * d.y - py + cy;
         if (age >= d.ms) {
             if (!d.hit) { d.hit = true; impact(d); }
@@ -297,7 +333,7 @@ export function drawGround(c, px, py, ratio) {
         }
         if (!opened) { c.save(); c.lineCap = "round"; opened = true; }
         const k = age / d.ms, h = heightOf(d, k);
-        const col = d.crate ? CRATE_MARK : self ? GOLD : "#ffd9a0";
+        const col = d.crate ? (d.tint || CRATE_MARK) : self ? GOLD : "#ffd9a0";
         // the sound barrier, two thirds of the way down: a ring where it is in the air
         if (!d.boom && k > 0.62 && !d.rock) {
             d.boom = true;
@@ -414,7 +450,7 @@ export function drawAir(c, px, py, ratio) {
         const tx = ratio * (d.x - DIR_X * h * d.H) - px + cx, ty = ratio * (d.y - DIR_Y * h * d.H) - py + cy;
         const R = TANK_R * ratio * 1.35;
         const front = Math.atan2(DIR_Y, DIR_X);
-        if (d.crate) drawCrate(c, tx, ty, d.size * ratio * 0.78 * (1 + 0.12 * h), now);
+        if (d.crate) drawCrate(c, tx, ty, d.size * ratio * 0.78 * (1 + 0.12 * h), now, d.tint, d.team);
         else if (d.rock) drawMeteor(c, tx, ty, TANK_R * ratio * 0.9, now, d.id);
         // heat shimmer: wobbling arcs on the leading side
         for (let i = 0; i < 3; i++) {
@@ -424,7 +460,7 @@ export function drawAir(c, px, py, ratio) {
             c.lineWidth = Math.max(1.5, (4 - i) * ratio);
             c.beginPath(); c.arc(tx, ty, R * (1 + i * 0.18), front - 1.1 + wob, front + 1.1 + wob); c.stroke();
         }
-        if (d.id === gui.playerid && k > 0.2 && !calm()) {
+        if (d.self && k > 0.2 && !calm()) {
             // wind streaks rushing out from the middle, more and faster near the ground
             const u = (k - 0.2) / 0.8;
             const W = global.screenWidth, Hh = global.screenHeight, D = Math.hypot(W, Hh) / 2;
@@ -476,8 +512,9 @@ function drawHaze(c, now) {
     c.restore();
 }
 
-function drawCrate(c, x, y, s, now) {
-    const spr = A && A.crateSprite ? A.crateSprite() : null;
+function drawCrate(c, x, y, s, now, tint, team) {
+    const spr = A && A.crateSprite ? A.crateSprite(team) : null;
+    const band = tint || CHUTE_BAND;
     const sway = calm() ? 0 : Math.sin(now / 240) * 0.1;
     c.save();
     c.translate(x, y);
@@ -501,7 +538,7 @@ function drawCrate(c, x, y, s, now) {
     c.closePath();
     c.fillStyle = CHUTE; c.fill();
     c.save(); c.clip();
-    c.fillStyle = CHUTE_BAND;
+    c.fillStyle = band;
     c.fillRect(-cw * 0.62, top - ch * 1.5, cw * 0.38, ch * 2);
     c.fillRect(cw * 0.24, top - ch * 1.5, cw * 0.38, ch * 2);
     c.fillStyle = "rgba(0,0,0,0.12)"; c.fillRect(-cw * 1.1, top - ch * 0.25, cw * 2.2, ch);
@@ -513,7 +550,7 @@ function drawCrate(c, x, y, s, now) {
     } else {
         c.fillStyle = "#c6955a"; c.strokeStyle = CRATE_INK; c.lineWidth = lw;
         c.fillRect(-s, -s, s * 2, s * 2); c.strokeRect(-s, -s, s * 2, s * 2);
-        c.fillStyle = CHUTE_BAND;
+        c.fillStyle = band;
         c.fillRect(-s, -s * 0.16, s * 2, s * 0.32);
         c.fillRect(-s * 0.16, -s, s * 0.32, s * 2);
     }

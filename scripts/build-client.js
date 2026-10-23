@@ -38,6 +38,8 @@ const HOT = new Set([
     "client/mineDust.js",
     "client/stormFx.js",
     "client/raidHeat.js",
+    "client/teamWar.js",
+    "client/teamWarLogic.js",
     "client/crowns.js",
     "client/crownArt.js",
     "client/crownsLogic.js",

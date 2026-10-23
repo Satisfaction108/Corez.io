@@ -10,7 +10,7 @@ class Activation {
         if (this.body._rootIsBot === undefined) {
             let root = this.body, hops = 0;
             while (root.master && root.master !== root && hops++ < 8) root = root.master;
-            this.body._rootIsBot = !!(root.isBot || root.isPlayer);
+            this.body._rootIsBot = !!(root.isBot || root.isPlayer || root.isTitan);
         }
         return this.body._rootIsBot;
     }

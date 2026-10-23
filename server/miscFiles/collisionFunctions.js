@@ -1,4 +1,6 @@
 const bossGuard = require('../game/terrain/bossGuard.js');
+let titanMod = null;
+const titanGuard = () => titanMod || (titanMod = require('../game/terrain/titan.js'));
 const classBalance = require('../game/terrain/classBalance.js');
 
 function simplecollide(my, n) {
@@ -36,6 +38,13 @@ function heldFrom(chest, e) {
     let root = e, hops = 0;
     while (root && root.master && root.master !== root && hops++ < 8) root = root.master;
     return !root || root.id !== chest.nxOwnerId;
+}
+
+function wrongCrateTeam(chest, e) {
+    if (!chest.crateTeam) return false;
+    let root = e, hops = 0;
+    while (root && root.master && root.master !== root && hops++ < 8) root = root.master;
+    return !root || root.team !== chest.crateTeam;
 }
 
 function firmcollide(my, n, buffer = 0) {
@@ -328,11 +337,13 @@ function advancedcollide(my, n, doDamage, doInelastic, nIsFirmCollide = false) {
             let __my = damage._n * deathFactor._n;
             let __n = damage._me * deathFactor._me;
             // loot chests only take damage from tanks and their bullets
-            if (my.isLootChest && (!rootIsTank(n) || heldFrom(my, n))) { __my = 0; my._gatedN = (my._gatedN | 0) + 1; }
-            if (n.isLootChest && (!rootIsTank(my) || heldFrom(n, my))) { __n = 0; n._gatedN = (n._gatedN | 0) + 1; }
+            if (my.isLootChest && (!rootIsTank(n) || heldFrom(my, n) || wrongCrateTeam(my, n))) { __my = 0; my._gatedN = (my._gatedN | 0) + 1; }
+            if (n.isLootChest && (!rootIsTank(my) || heldFrom(n, my) || wrongCrateTeam(n, my))) { __n = 0; n._gatedN = (n._gatedN | 0) + 1; }
             // raid bosses take damage in measured doses (terrain/bossGuard.js)
             if (my.isRoyaleBoss && __my > 0 && my.team != n.team) __my = bossGuard.capHit(my, n, __my);
             if (n.isRoyaleBoss && __n > 0 && my.team != n.team) __n = bossGuard.capHit(n, my, __n);
+            if (n.isTitan && __n > 0 && my.team != n.team) __n = titanGuard().intoTitan(n, my, __n);
+            if (my.isTitan && __my > 0 && my.team != n.team) __my = titanGuard().intoTitan(my, n, __my);
             // some classes hit other tanks softer or harder (terrain/classBalance.js)
             if (__my > 0 && my.team != n.team) __my = classBalance.intoTank(my, n, __my);
             if (__n > 0 && my.team != n.team) __n = classBalance.intoTank(n, my, __n);

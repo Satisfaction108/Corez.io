@@ -51,7 +51,8 @@ function gems() { return require('./gems.js'); }
 function dust() { return require('../../accounts/game/dustHooks.js'); }
 
 function mode() { return Config.royale_duos ? 'duo' : 'solo'; }
-function modeName(m) { return m === 'duo' ? 'Duos' : 'Solo'; }
+function gameMode() { return Config.royale_teams ? '2tdm' : 'ffa'; }
+function modeName(m) { return m === 'duo' ? 'Duos' : m === '2tdm' ? '2TDM' : m === 'ffa' ? 'FFA' : 'Solo'; }
 
 function on() {
     try { return !!(Config.dig_royale && !Config.tutorial && bridge().active()); } catch (e) { return false; }
@@ -200,7 +201,7 @@ function buildRecord(socket, body, t) {
         defs.push(k);
     }
     return {
-        v: 1, mode: mode(), savedAt: t, name: String(body.name || ''),
+        v: 1, mode: mode(), gm: gameMode(), savedAt: t, name: String(body.name || ''),
         label: String(body.label || ''), defs,
         skillRaw: body.skill ? body.skill.raw.slice() : null,
         points: body.skill ? body.skill.points | 0 : 0,
@@ -287,7 +288,7 @@ function restore(socket, code, t = Date.now()) {
     let res = null;
     try {
         res = saves().restore({
-            code, mode: mode(), userId: socket.account ? socket.account.id : 0, guestId: socket.guestId || null, ip: socket.ip || null,
+            code, mode: mode(), gameMode: gameMode(), userId: socket.account ? socket.account.id : 0, guestId: socket.guestId || null, ip: socket.ip || null,
         }, t);
     } catch (e) { logErr('restore', e); res = { ok: false, reason: 'error' }; }
     if (!res.ok) {

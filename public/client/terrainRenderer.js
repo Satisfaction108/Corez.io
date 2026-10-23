@@ -376,7 +376,8 @@ class TerrainRenderer {
         return this._cells[r * this._cols + c] === CELL_BASALT;
     }
 
-    init(cells, cols, rows, rockState, oreState, oreSalt, biomeSeed = 0) {
+    init(cells, cols, rows, rockState, oreState, oreSalt, biomeSeed = 0, teamTones = false) {
+        this._teamTones = !!teamTones;
         // The lattice polygons come only from the cell grid (and cost ~250 ms
         // to make), so a resync of the same grid keeps them. Everything built
         // from rock state (silhouette, texture, caches) is made again.
@@ -549,7 +550,8 @@ class TerrainRenderer {
                 continue;
             }
             if (ev.d && this._growing.has(ev.k)) {
-                this._collapseGrowth(ev.k, now);
+                this._emitRockNumber(ev);
+                this._collapseGrowth(ev.k, now, ev.o | 0);
                 rebuilt = true;
                 const cell = this._cellPolys.get(ev.k);
                 if (!cell || !this._view || this._onScreen(cell.cx, cell.cy)) rebuiltNear = true;
@@ -574,13 +576,7 @@ class TerrainRenderer {
                     const delay = onscreen ? 55 : 0;
                     this._spawnShatter(cell, now + delay, tier);
                     this._oreLook(ev.k);
-                    if (onscreen) this._shakeNearCell(cell, tier ? 2 : 1.5, 160, delay);
-                    if (onscreen && this._world) {
-                        const w = this._world;
-                        const wx = cell.cx * w.s - w.hw, wy = cell.cy * w.s - w.hh;
-                        if (tier && config.game.gemSounds) gameSound.oreBreak(wx, wy, tier);
-                        else      gameSound.rockBreak(wx, wy);
-                    }
+                    if (onscreen) this._breakPunch(cell, tier, delay);
                 }
                 rebuilt = true;
             } else if (!ev.d) {
@@ -604,8 +600,8 @@ class TerrainRenderer {
                         dx /= dl; dy /= dl;
                     }
                     this._impacts.push({ x: ev.x, y: ev.y, dx, dy, born: now,
-                                         small: !!ev.g, noChips: true,
-                                         chips: this._bio ? this._bioChips(ev.k) : null,
+                                         small: !!ev.g, noChips: false,
+                                         chips: this._hitChips(ev.k, this._ore.get(ev.k) | 0),
                                          seed: (ev.k + Math.round(ev.x * 97) + (ev.g ? (now | 0) : 0)) & 0xffff });
                     if (this._impacts.length > 16) this._impacts.shift();
                 }
@@ -618,6 +614,12 @@ class TerrainRenderer {
             const delayMs = rebuiltNear ? 40 : 400;
             this._silRebuildAt = this._silRebuildAt ? Math.min(this._silRebuildAt, nowR + delayMs) : nowR + delayMs;
         }
+    }
+
+    _hitChips(k, ore) {
+        const base = (this._bio ? this._bioChips(k) : null) || TerrainRenderer.ROCK_CHIP;
+        const oreCss = ore ? TerrainRenderer.ORE_FX_CSS[ore] : null;
+        return oreCss ? [base[0], oreCss[0], oreCss[1]] : base;
     }
 
     _emitRockNumber(ev) {
@@ -769,9 +771,31 @@ class TerrainRenderer {
         }
     }
 
-    // Shot down before it finished: a husk crumbling, not a rock shattering.
-    _collapseGrowth(k, now) {
+    _breakPunch(cell, tier, delay) {
+        this._shakeNearCell(cell, tier ? 4.5 : 3.5, 210, delay);
+        if (!this._world) return;
+        const w = this._world;
+        const wx = cell.cx * w.s - w.hw, wy = cell.cy * w.s - w.hh;
+        if (tier && config.game.gemSounds) gameSound.oreBreak(wx, wy, tier);
+        else gameSound.rockBreak(wx, wy);
+    }
+    _growingShape(k, g, now) {
+        const cell = this._cellPolys.get(k);
+        if (!cell || !g) return cell;
+        const p = Math.min(1, Math.max(0, riseElapsed(g, now) / GROW_MS));
+        const sc = GROW_SCALE0 + (1 - GROW_SCALE0) * growEase(p);
+        if (sc >= 0.999) return cell;
+        const ax = Number.isFinite(g.ax) ? g.ax : cell.cx, ay = Number.isFinite(g.ay) ? g.ay : cell.cy;
+        const poly = cell.poly.map(pt => [ax + (pt[0] - ax) * sc, ay + (pt[1] - ay) * sc]);
+        const path = new Path2D();
+        poly.forEach((pt, i) => i ? path.lineTo(pt[0], pt[1]) : path.moveTo(pt[0], pt[1]));
+        path.closePath();
+        return { k, poly, path, cx: ax + (cell.cx - ax) * sc, cy: ay + (cell.cy - ay) * sc };
+    }
+    _collapseGrowth(k, now, oreTier = 0) {
         const g = this._growing.get(k);
+        const shape = this._growingShape(k, g, now);
+        const tier = oreTier || (g ? g.tier | 0 : 0) || (this._ore.get(k) | 0);
         this._growing.delete(k);
         this._growDust.delete(k);
         this._oreSprout.delete(k);
@@ -785,13 +809,13 @@ class TerrainRenderer {
         this._landed.delete(k);
         this.mapDirty = true;
         this._damageDirty = true;
-        const cell = this._cellPolys.get(k);
+        const cell = shape;
         if (!cell) return;
 
         const onscreen = this._onScreen(cell.cx, cell.cy);
         const delay = onscreen ? 55 : 0;
-        this._spawnShatter(cell, now + delay, 0);
-        if (onscreen) this._shakeNearCell(cell, 4, 220, delay);
+        this._spawnShatter(cell, now + delay, tier);
+        if (onscreen) this._breakPunch(cell, tier, delay);
     }
 
     _revealOre(k, tier, now) {
@@ -873,6 +897,13 @@ class TerrainRenderer {
         fx.born = now ?? performance.now();
         // chips in this rock's biome tones (null: the classic ones)
         fx.chips = this._bio ? this._bioChips(cell.k) : null;
+        fx.tier = tier | 0;
+        fx.flash = tier && TerrainRenderer.ORE_PAL[tier] ? TerrainRenderer.ORE_PAL[tier].light : 'rgb(255,248,236)';
+        if (tier && TerrainRenderer.ORE_FX_CSS[tier]) {
+            const base = fx.chips || TerrainRenderer.ROCK_CHIP, ore = TerrainRenderer.ORE_FX_CSS[tier];
+            fx.chips = fx.oreChips || (fx.oreChips = [null, null, null]);
+            fx.chips[0] = base[0]; fx.chips[1] = ore[0]; fx.chips[2] = ore[1];
+        }
         this._fx.push(fx);
     }
 
@@ -1562,14 +1593,17 @@ class TerrainRenderer {
     _setBiomes(seed, cols, rows) {
         const B = typeof window !== 'undefined' ? window.DWBiomes : null;
         this._bioPatch.clear();
+        this._sideCols = null;
         if (!seed || !B) { this._bio = null; this._bioUpload = true; return; }
         let bio = this._bio;
-        if (!bio || bio.seed !== seed || bio.cols !== cols || bio.rows !== rows) {
+        const team = !!this._teamTones && typeof B.teamBiomes === 'function';
+        const table = team ? B.teamBiomes() : null;
+        if (!bio || bio.seed !== seed || bio.cols !== cols || bio.rows !== rows || bio.team !== team) {
             // only the lattice the map has (plus a cell round it): texels
             // past it are never read, a shader sample there is off the map
             const rs = Math.min(cols, 120) / 50;
             const i1 = Math.min(BIO_N - 1, Math.ceil(cols / rs) + 9), j1 = Math.min(BIO_N - 1, Math.ceil(rows / rs) + 9);
-            bio = { seed, cols, rows, i0: 7, j0: 7, i1, j1,
+            bio = { seed, cols, rows, team, i0: 7, j0: 7, i1, j1,
                     base: new Uint8Array(BIO_N * BIO_N * BIO_B),  // plain rock tones per cell
                     dom:  new Int8Array(BIO_N * BIO_N).fill(-1),  // its main biome
                     tex:  new Uint8Array(BIO_N * BIO_T * BIO_N * 4),  // what the shader reads
@@ -1578,7 +1612,7 @@ class TerrainRenderer {
             for (let j = bio.j0; j <= j1; j++) {
                 for (let i = bio.i0; i <= i1; i++) {
                     const c = j * BIO_N + i;
-                    B.rockTones(i - 8, j - 8, cols, rows, seed, bio.base, c * BIO_B, 0);
+                    B.rockTones(i - 8, j - 8, cols, rows, seed, bio.base, c * BIO_B, 0, table);
                     B.rockWeights(i - 8, j - 8, cols, rows, seed, w);
                     bio.dom[c] = B.dominant(w);
                 }
@@ -1683,6 +1717,11 @@ class TerrainRenderer {
     }
     // The main biome index of a rock (shared/rockBiomes.js BIOMES), -1 when
     // the map has none. The minimap colours by it.
+    biomeTable() {
+        const B = typeof window !== 'undefined' ? window.DWBiomes : null;
+        if (!B) return null;
+        return this._teamTones && typeof B.teamBiomes === 'function' ? B.teamBiomes() : B.BIOMES;
+    }
     biomeOf(k) {
         const bio = this._bio;
         if (!bio) return -1;
@@ -1834,7 +1873,7 @@ class TerrainRenderer {
         const keyOf = (x, y) => Math.round(x * Q) * 1e6 + Math.round(y * Q);
         const list = [];
         for (let i = 0; i < segs.length; i += 5) {
-            if (downRight && (segs[i + 3] - segs[i + 1]) - (segs[i + 2] - segs[i]) <= 0) continue;
+            if (downRight && segs[i] - segs[i + 2] <= 0) continue;
             list.push(i);
         }
         for (let s = 0; s < list.length; s++) {
@@ -1882,7 +1921,7 @@ class TerrainRenderer {
         let css = map.get(id);
         if (css === undefined) {
             const B = typeof window !== 'undefined' ? window.DWBiomes : null;
-            const fill = dom >= 0 && B ? B.BIOMES[dom].fill : CLASSIC_FILL;
+            const fill = dom >= 0 && B ? this.biomeTable()[dom].fill : CLASSIC_FILL;
             const c = fill.map(v => Math.round(v * SIDE_TONE));
             css = this._toneCss(c[0], c[1], c[2]);
             map.set(id, css);
@@ -1894,10 +1933,10 @@ class TerrainRenderer {
         const sides = new Map(), s = L.segs;
         for (let i = 0; i < s.length; i += 5) {
             const ax = s[i], ay = s[i + 1], bx = s[i + 2], by = s[i + 3];
-            if ((by - ay) - (bx - ax) <= 0) continue;
+            if (ax - bx <= 0) continue;
             let p = sides.get(s[i + 4]);
             if (!p) { p = new Path2D(); sides.set(s[i + 4], p); }
-            p.moveTo(ax, ay); p.lineTo(bx, by); p.lineTo(bx + e, by + e); p.lineTo(ax + e, ay + e); p.closePath();
+            p.moveTo(ax, ay); p.lineTo(bx, by); p.lineTo(bx, by + e); p.lineTo(ax, ay + e); p.closePath();
         }
         L.sides = sides;
         L.sidesE = e;
@@ -2934,10 +2973,21 @@ class TerrainRenderer {
 
                 const ts = dt / 280;
                 if (!im.ticksOnly && ts < 1) {
-                    ctx.globalAlpha = (1 - ts) * (im.small ? 0.25 : 0.45);
-                    ctx.fillStyle = 'rgb(255,235,180)';
+                    ctx.globalAlpha = (1 - ts) * (im.small ? 0.3 : 0.7);
+                    ctx.fillStyle = 'rgb(255,240,196)';
                     ctx.beginPath();
-                    ctx.arc(im.x, im.y, 0.08 * rockSz * isc * (1 - ts * 0.6), 0, Math.PI * 2);
+                    ctx.arc(im.x, im.y, 0.13 * rockSz * isc * (1 - ts * 0.6), 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.globalAlpha = 1;
+                }
+                const td = dt / 520;
+                if (!im.ticksOnly && !im.small && td < 1) {
+                    const de = 1 - Math.pow(1 - td, 3);
+                    ctx.globalAlpha = Math.pow(1 - td, 2) * (lite ? 0.14 : 0.22);
+                    ctx.fillStyle = (im.chips || CHIPC)[0];
+                    ctx.beginPath();
+                    ctx.arc(im.x + (im.dx ?? 0) * de * 0.12 * rockSz, im.y + (im.dy ?? 0) * de * 0.12 * rockSz,
+                            (0.08 + 0.22 * de) * rockSz, 0, Math.PI * 2);
                     ctx.fill();
                     ctx.globalAlpha = 1;
                 }
@@ -2951,7 +3001,7 @@ class TerrainRenderer {
                 const fe  = 1 - Math.pow(1 - fly, 3);
                 const al  = tc < 0.5 ? 0.9 : 0.9 * (1 - (tc - 0.5) / 0.5);
                 ctx.globalAlpha = al;
-                for (let s = 0; s < (lite ? (im.small ? 2 : 6) : im.small ? 5 : 12); s++) {
+                for (let s = 0; s < (lite ? (im.small ? 1 : 6) : im.small ? 3 : 12); s++) {
                     const ang = baseAng + (this._h(s, im.seed, 55) - 0.5) * 1.5;
                     const sp  = (0.2 + this._h(s, im.seed, 56) * 0.75) * rockSz * isc;
                     const sz  = (0.016 + this._h(s, im.seed, 57) * 0.028) * rockSz * (im.small ? 0.8 : 1);
@@ -3004,21 +3054,33 @@ class TerrainRenderer {
                 if (t >= 1) { pool.push(fx); this._fx.splice(i, 1); continue; }
                 const eo   = 1 - Math.pow(1 - t, 4);
                 const fade = t < 0.5 ? 1 : 1 - (t - 0.5) / 0.5;
-                // hard white flash filling the rock's silhouette
-                if (t < 0.12) {
-                    ctx.globalAlpha = (1 - t / 0.12) * 0.4;
-                    ctx.fillStyle = 'rgb(240,232,250)';
+                if (t < 0.18) {
+                    ctx.globalAlpha = (1 - t / 0.18) * 0.7;
+                    ctx.fillStyle = fx.flash || 'rgb(255,248,236)';
                     ctx.fill(fx.path);
                 }
-                // one soft dust ring
-                ctx.strokeStyle = 'rgb(110,100,125)';
                 {
-                    const rq = 1 - Math.pow(1 - t, 4);          // easeOutQuart
-                    ctx.globalAlpha = Math.pow(1 - t, 1.5) * 0.3;
+                    const rq = 1 - Math.pow(1 - t, 4);
+                    const dust = fx.chips ? fx.chips[0] : CHIPS[0];
+                    ctx.fillStyle = dust;
+                    ctx.globalAlpha = Math.pow(1 - t, 2) * (lite ? 0.16 : 0.24);
+                    ctx.beginPath();
+                    ctx.arc(fx.cx, fx.cy, (0.35 + 0.9 * rq) * rockSz, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = 'rgb(110,100,125)';
+                    ctx.globalAlpha = Math.pow(1 - t, 1.5) * 0.4;
                     ctx.beginPath();
                     ctx.arc(fx.cx, fx.cy, (0.25 + 1.6 * rq) * rockSz, 0, Math.PI * 2);
-                    ctx.lineWidth   = 0.07 * rockSz * (1 - t) + 0.01;
+                    ctx.lineWidth   = 0.09 * rockSz * (1 - t) + 0.01;
                     ctx.stroke();
+                    if (fx.tier && !lite) {
+                        ctx.strokeStyle = fx.colors[1] || fx.colors[0];
+                        ctx.globalAlpha = Math.pow(1 - t, 2) * 0.55;
+                        ctx.beginPath();
+                        ctx.arc(fx.cx, fx.cy, (0.15 + 1.1 * rq) * rockSz, 0, Math.PI * 2);
+                        ctx.lineWidth = 0.05 * rockSz * (1 - t) + 0.01;
+                        ctx.stroke();
+                    }
                 }
                 // a few coloured streaks flying out with the debris
                 const pal = fx.colors, S = fx.sparks, nS = Math.ceil(fx.nSparks / (lite ? 6 : 3));
@@ -3174,15 +3236,15 @@ class TerrainRenderer {
                 ctx.lineJoin = 'round';
                 ctx.lineCap = 'round';
                 ctx.strokeStyle = SHADOW_INK;
-                ctx.translate(sideE * 1.5, sideE * 1.5);
+                ctx.translate(0, sideE * 1.5);
                 ctx.lineWidth = sideE * 3.4;
                 ctx.stroke(local.dr);
                 ctx.lineWidth = sideE * 1.9;
                 ctx.stroke(local.dr);
-                ctx.translate(-sideE * 1.5, -sideE * 1.5);
+                ctx.translate(0, -sideE * 1.5);
                 this._sideCtx = ctx;
                 sides.forEach(this._fillSide || (this._fillSide = (p, css) => { this._sideCtx.fillStyle = css; this._sideCtx.fill(p); }));
-                ctx.translate(sideE, sideE);
+                ctx.translate(0, sideE);
                 ctx.lineWidth = Math.min(SIDE_EDGE_PX * 2 / cellW, sideE);
                 ctx.strokeStyle = SIDE_EDGE_INK;
                 ctx.stroke(local.dr);
@@ -3243,6 +3305,68 @@ class TerrainRenderer {
                     ctx.strokeStyle = OUTLINE_INK;
                     ctx.stroke();
                 };
+                const riseSideE = Math.min(SIDE_PX / cellW, SIDE_MAX * rockSz);
+                const fancy = !simple && !lite;
+                const riseLattice = this._voroLattice, riseDead = this._rockDead;
+                const openBelow = (nb, pi, k) => {
+                    if (!nb) return true;
+                    const nk = nb[pi];
+                    return nk !== k && (riseDead.has(nk) || !riseLattice.has(nk));
+                };
+                const drawRiseSide = (poly, k, eH) => {
+                    if (!fancy || !(eH > 0)) return;
+                    const n = poly.length;
+                    const L = riseLattice ? riseLattice.get(k) : null;
+                    const nb = L && L.nb && L.nb.length === n ? L.nb : null;
+                    let any = false;
+                    ctx.beginPath();
+                    for (let pi = 0; pi < n; pi++) {
+                        const A = poly[pi], B = poly[(pi + 1) % n];
+                        if (A[0] - B[0] <= 0 || !openBelow(nb, pi, k)) continue;
+                        ctx.moveTo(A[0], A[1] + eH * 1.5); ctx.lineTo(B[0], B[1] + eH * 1.5);
+                        any = true;
+                    }
+                    if (!any) return;
+                    ctx.lineCap = 'round';
+                    ctx.strokeStyle = SHADOW_INK;
+                    ctx.lineWidth = eH * 3.4;
+                    ctx.stroke();
+                    ctx.lineWidth = eH * 1.9;
+                    ctx.stroke();
+                    ctx.beginPath();
+                    for (let pi = 0; pi < n; pi++) {
+                        const A = poly[pi], B = poly[(pi + 1) % n];
+                        if (A[0] - B[0] <= 0 || !openBelow(nb, pi, k)) continue;
+                        ctx.moveTo(A[0], A[1]); ctx.lineTo(B[0], B[1]);
+                        ctx.lineTo(B[0], B[1] + eH); ctx.lineTo(A[0], A[1] + eH);
+                        ctx.closePath();
+                    }
+                    ctx.fillStyle = this._sideCss(k);
+                    ctx.fill();
+                    ctx.beginPath();
+                    for (let pi = 0; pi < n; pi++) {
+                        const A = poly[pi], B = poly[(pi + 1) % n];
+                        if (A[0] - B[0] <= 0 || !openBelow(nb, pi, k)) continue;
+                        ctx.moveTo(A[0], A[1] + eH); ctx.lineTo(B[0], B[1] + eH);
+                    }
+                    ctx.lineWidth = Math.min(SIDE_EDGE_PX * 2 / cellW, eH);
+                    ctx.strokeStyle = SIDE_EDGE_INK;
+                    ctx.stroke();
+                };
+                const bevelIn = (poly) => {
+                    if (!fancy) return;
+                    ctx.lineWidth = outlineW + bevD * 2;
+                    ctx.translate(bevD, bevD);
+                    tracePoly(poly);
+                    ctx.strokeStyle = BEVEL_LIGHT;
+                    ctx.stroke();
+                    ctx.translate(-2 * bevD, -2 * bevD);
+                    tracePoly(poly);
+                    ctx.strokeStyle = BEVEL_DARK;
+                    ctx.stroke();
+                    ctx.translate(bevD, bevD);
+                    tracePoly(poly);
+                };
                 const drawRockPoly = (landedCell) => {
                     ctx.save();
                     ctx.clip();
@@ -3258,6 +3382,7 @@ class TerrainRenderer {
                     if (!cell) continue;
                     if (cell.cx < tlx - 4 || cell.cx > tlx + tlw + 4 ||
                         cell.cy < tly - 4 || cell.cy > tly + tlh + 4) continue;
+                    drawRiseSide(cell.poly, k, riseSideE);
                     tracePoly(cell.poly);
                     drawRockPoly(cell);
                 }
@@ -3299,6 +3424,8 @@ class TerrainRenderer {
                         q[1] = ay2 + (pt[1] - g.ay) * sc;
                         spoly[pi] = q;
                     }
+                    const rise = growEase(p);
+                    if (!many || p > 0.5) drawRiseSide(spoly, k, riseSideE * sc * (0.3 + 0.7 * rise));
                     tracePoly(spoly);
 
                     ctx.save();
@@ -3310,7 +3437,23 @@ class TerrainRenderer {
                     if (tex.hd) this._hdDrawCell(ctx, tex, cell);
                     else ctx.drawImage(tex.img, bx, by, tex.w, tex.h);
                     ctx.restore();
-                    outlineIn(sc);
+                    const settle = 1 - rise;
+                    if (settle > 0.02) {
+                        ctx.fillStyle = WEAR_INK;
+                        ctx.globalAlpha = 0.16 * settle;
+                        ctx.fill();
+                        ctx.globalAlpha = 1;
+                    }
+                    const hitAt = this._hitFlash.get(k);
+                    if (!simple && hitAt !== undefined && nowMs - hitAt < 110) {
+                        const hf = 1 - (nowMs - hitAt) / 110;
+                        ctx.fillStyle = 'rgb(255,248,232)';
+                        ctx.globalAlpha = hf * hf * 0.22;
+                        ctx.fill();
+                        ctx.globalAlpha = 1;
+                    }
+                    if (!many) bevelIn(spoly);
+                    outlineIn(1);
                     ctx.restore();
 
                     const frac = this._rockHealth.get(k);
@@ -3318,7 +3461,9 @@ class TerrainRenderer {
                     const expect = Math.max(0.25, growEase(p));
                     const intact = frac === undefined ? 1
                         : Math.max(0, Math.min(1, frac / expect));
-                    const stage = this._stageOf(intact);
+                    const hurt = this._stageOf(intact);
+                    const forming = p < 0.3 ? 4 : p < 0.5 ? 3 : p < 0.68 ? 2 : p < 0.86 ? 1 : 0;
+                    const stage = Math.max(hurt, forming);
                     if (stage >= 1) {
                         const cpath = this._getCrackPath(k, stage);
                         if (cpath) {
@@ -3330,9 +3475,12 @@ class TerrainRenderer {
                             ctx.translate(-g.ax, -g.ay);
                             ctx.lineCap = 'round';
                             const w = 0.035 * rockSz * (0.28 + 0.075 * stage) / sc;
+                            const closing = hurt >= stage ? 1 : 0.45 + 0.55 * settle;
+                            ctx.globalAlpha = closing;
                             ctx.strokeStyle = CRACK_INK;
-                            ctx.lineWidth = w * 1.6;
+                            ctx.lineWidth = w * 1.6 * (hurt >= stage ? 1 : 0.6 + 0.6 * settle);
                             ctx.stroke(cpath);
+                            ctx.globalAlpha = 1;
                             ctx.restore();
                         }
                     }
@@ -3370,10 +3518,21 @@ class TerrainRenderer {
                 ctx.lineJoin = 'round';
                 for (let i = this._growFx.length - 1; i >= 0; i--) {
                     const fx = this._growFx[i];
-                    const t = (nowMs - fx.born) / 250;
-                    if (t >= 1) { this._growFx.splice(i, 1); continue; }
+                    const td = (nowMs - fx.born) / 480;
+                    if (td >= 1) { this._growFx.splice(i, 1); continue; }
                     const cell = this._cellPolys.get(fx.k);
                     if (!cell) { this._growFx.splice(i, 1); continue; }
+                    const de = 1 - Math.pow(1 - td, 3);
+                    const chips = (this._bio ? this._bioChips(fx.k) : null) || TerrainRenderer.ROCK_CHIP;
+                    ctx.strokeStyle = chips[0];
+                    ctx.globalAlpha = Math.pow(1 - td, 2) * (lite ? 0.18 : 0.3);
+                    ctx.lineWidth = (0.05 + 0.22 * (1 - td)) * rockSz;
+                    ctx.beginPath();
+                    ctx.arc(cell.cx, cell.cy, (0.7 + 0.9 * de) * rockSz, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.globalAlpha = 1;
+                    const t = (nowMs - fx.born) / 250;
+                    if (t >= 1) continue;
                     const a = Math.pow(1 - t, 1.5);
                     ctx.strokeStyle = `rgba(255,214,150,${0.7 * a})`;
                     ctx.lineWidth = 0.16 * rockSz * (0.4 + 0.6 * a);
@@ -3399,9 +3558,17 @@ class TerrainRenderer {
                     const stage = this._stageOf(frac);
                     const bites = this._getBitePath(k);
                     const path  = stage >= 1 ? this._getCrackPath(k, stage) : null;
-                    if (!bites && !path) return;
+                    const hitAt = this._hitFlash.get(k);
+                    const faceFlash = !simple && hitAt !== undefined && nowMs - hitAt < 110 ? 1 - (nowMs - hitAt) / 110 : 0;
+                    if (!bites && !path && faceFlash <= 0) return;
                     ctx.save();
                     ctx.clip(cell.path);
+                    if (faceFlash > 0) {
+                        ctx.fillStyle = 'rgb(255,248,232)';
+                        ctx.globalAlpha = faceFlash * faceFlash * 0.2;
+                        ctx.fill(cell.path);
+                        ctx.globalAlpha = 1;
+                    }
 
                     if (stage >= 1) {
                         ctx.fillStyle = WEAR_INK;

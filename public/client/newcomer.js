@@ -15,6 +15,7 @@ import { global } from "./global.js";
 import { gameSound } from "./sound.js";
 import * as juice from "./juice.js";
 import * as L from "./newcomerLogic.js";
+import { baseDeathTip } from "./teamWar.js";
 
 let A = null;
 export function init(helpers) { A = helpers; }
@@ -270,7 +271,7 @@ export function deathInfo() {
     const kind = L.deathKind(d);
     return {
         kind,
-        tip: L.DEATH_TIPS[kind],
+        tip: kind === "base" ? baseDeathTip(L.DEATH_TIPS[kind]) : L.DEATH_TIPS[kind],
         kept: L.keptLine({
             banked: you.banked != null ? you.banked : global.finalBanked,
             carried: global.finalCarried,

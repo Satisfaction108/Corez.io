@@ -22,7 +22,7 @@
     background: #4e4e4e !important;
     box-shadow: none !important;
 }
-#ingameSettingsBtn .dw-ic, #ingameFullscreenBtn .dw-ic { filter: drop-shadow(0 0 0 #333); }
+#ingameSettingsBtn .dw-ic, #ingameFullscreenBtn .dw-ic, #ingameInviteBtn .dw-ic { filter: drop-shadow(0 0 0 #333); }
 #ingameSettingsBtn:hover .dw-ic { transform: none; }
 .dw-igbtn.accent { background: #e07b2e !important; border-color: #9e4a14 !important; }
 .dw-igbtn.accent:hover:not(:disabled) { background: #ea8a3e !important; }
@@ -315,7 +315,7 @@ html[data-theme="light"] :is(#ingameSettingsBtn, #ingameTutorialBtn, #ingameFull
 }
 html[data-theme="light"] :is(#ingameSettingsBtn, #ingameTutorialBtn, #ingameFullscreenBtn, .dw-igbtn):not(.play):not(.accent):hover:not(:disabled) { background: #ffffff !important; }
 html[data-theme="light"] :is(#ingameSettingsBtn, #ingameTutorialBtn, #ingameFullscreenBtn, .dw-igbtn):not(.play):not(.accent):active:not(:disabled) { background: #e6e6e6 !important; }
-html[data-theme="light"] :is(#ingameSettingsBtn, #ingameFullscreenBtn) .dw-ic { filter: none; }
+html[data-theme="light"] :is(#ingameSettingsBtn, #ingameFullscreenBtn, #ingameInviteBtn) .dw-ic { filter: none; }
 html[data-theme="light"] .dw-igbtn.play:disabled { background: #e6e6e6 !important; border-color: #c4c4c4 !important; color: #555555 !important; -webkit-text-stroke: 0; }
 html[data-theme] body.in-game:not(.mobile) #toastContainer .toast.dw-toast.ach::before { background: #f2b83c; border-radius: 3px; transform: rotate(45deg); }
 
@@ -378,3 +378,90 @@ html[data-theme="dark"] .sp-theme-card { background: rgba(255, 255, 255, .05); b
 html[data-theme="dark"] .sp-theme-card .sp-theme-note { color: #c4c6cc; }
 html[data-theme="dark"] .sp-theme-card.on { border-color: #f2b83c; background: rgba(242, 184, 60, .12); }
 html[data-theme] .sp-theme-card :is(.sp-theme-name, .sp-theme-note) { -webkit-text-stroke: 0; text-shadow: none; }
+
+#dwInvitePop {
+    position: fixed;
+    z-index: 31;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    box-sizing: border-box;
+    width: min(260px, calc(100vw - 16px));
+    padding: 6px;
+    overflow-y: auto;
+    border: 3px solid #3a3a3a;
+    border-radius: 6px;
+    background: rgba(40, 40, 40, 0.94);
+    color: #fff;
+    font-family: Ubuntu, 'Noto Color Emoji', sans-serif;
+    animation: ipIn 140ms ease-out both;
+}
+@keyframes ipIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+#dwInvitePop .ip-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    height: 38px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: #fff;
+    font: 700 14px/1 Ubuntu, sans-serif;
+    text-align: left;
+    -webkit-text-stroke: 3px #333;
+    paint-order: stroke fill;
+    cursor: pointer;
+}
+#dwInvitePop .ip-item .dw-ic { width: 20px; height: 20px; filter: drop-shadow(0 0 0 #333); }
+#dwInvitePop .ip-item:hover, #dwInvitePop .ip-item:focus-visible, #dwInvitePop .ip-item.on { background: rgba(255, 255, 255, 0.1); outline: none; }
+#dwInvitePop .ip-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 2px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+#dwInvitePop .ip-list[hidden] { display: none; }
+#dwInvitePop .ip-note { padding: 6px 10px 8px; color: #cfcfcf; font: 700 13px/1.35 Ubuntu, sans-serif; }
+#dwInvitePop .ip-row { display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 10px; border-radius: 4px; }
+#dwInvitePop .ip-row:hover { background: rgba(255, 255, 255, 0.06); }
+#dwInvitePop .ip-who { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
+#dwInvitePop .ip-name, #dwInvitePop .ip-st { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#dwInvitePop .ip-name { color: #fff; font: 700 14px/1.15 Ubuntu, 'Noto Color Emoji', sans-serif; }
+#dwInvitePop .ip-st { color: #b8b8b8; font: 700 11.5px/1.2 Ubuntu, sans-serif; }
+#dwInvitePop .ip-send {
+    flex: none;
+    min-width: 64px;
+    height: 28px;
+    padding: 0 10px;
+    border: 2px solid #2c8f37;
+    border-radius: 4px;
+    background: #4fcf5c;
+    color: #fff;
+    font: 700 13px/1 Ubuntu, sans-serif;
+    -webkit-text-stroke: 3px #333;
+    paint-order: stroke fill;
+    cursor: pointer;
+}
+#dwInvitePop .ip-send:hover:not(:disabled) { background: #5edb6b; }
+#dwInvitePop .ip-send:active:not(:disabled) { transform: translateY(1px); }
+#dwInvitePop .ip-send:disabled { border-color: #3a3a3a; background: #5a5a5a; color: #dcdcdc; cursor: default; }
+#ingameInviteBtn.open { background: #686868 !important; }
+html[data-theme="light"] #dwInvitePop { border: 1px solid rgba(0, 0, 0, .16); background: rgba(255, 255, 255, 0.97); color: #1f1f1f; }
+html[data-theme="light"] #dwInvitePop .ip-item { color: #1f1f1f; -webkit-text-stroke: 0; }
+html[data-theme="light"] #dwInvitePop .ip-item .dw-ic { filter: none; }
+html[data-theme="light"] #dwInvitePop .ip-item:hover,
+html[data-theme="light"] #dwInvitePop .ip-item:focus-visible,
+html[data-theme="light"] #dwInvitePop .ip-item.on { background: rgba(0, 0, 0, 0.06); }
+html[data-theme="light"] #dwInvitePop .ip-list { border-top-color: rgba(0, 0, 0, 0.1); }
+html[data-theme="light"] #dwInvitePop .ip-row:hover { background: rgba(0, 0, 0, 0.04); }
+html[data-theme="light"] #dwInvitePop .ip-note { color: #555555; }
+html[data-theme="light"] #dwInvitePop .ip-name { color: #1f1f1f; }
+html[data-theme="light"] #dwInvitePop .ip-st { color: #666666; }
+html[data-theme="light"] #dwInvitePop .ip-send { -webkit-text-stroke: 0; }
+html[data-theme="light"] #dwInvitePop .ip-send:disabled { border-color: #c4c4c4; background: #e6e6e6; color: #555555; }
+html[data-theme="light"] #ingameInviteBtn.open { background: #ffffff !important; }
+@media (prefers-reduced-motion: reduce) { #dwInvitePop { animation: none; } }

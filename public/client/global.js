@@ -418,6 +418,8 @@ const global = {
         bounty: null,
         lastPlace: 0,
         bossSeenId: 0,
+        tw: null,
+        twy: null,
     },
     raidRespawnAt: 0,
     raidQueued: false,
@@ -556,7 +558,7 @@ const global = {
             global.pullUpgradeMenu = true;
             global.pullSkillBar = true;
             if (global.treeUi) global.treeUi.open();
-            for (const id of ["ingameSettingsBtn", "ingameFullscreenBtn"]) { const el = document.getElementById(id); if (el) el.style.display = "none"; }
+            for (const id of ["ingameSettingsBtn", "ingameFullscreenBtn", "ingameInviteBtn"]) { const el = document.getElementById(id); if (el) el.style.display = "none"; }
             try { global.canvas && global.canvas.releaseMovement && global.canvas.releaseMovement(); } catch (e) { }
             try { global.socket && global.socket.talk("T"); } catch (e) { }
         } else if (type === "exit") {

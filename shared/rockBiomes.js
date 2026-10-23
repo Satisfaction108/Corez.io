@@ -50,7 +50,7 @@
         const f = (v) => Math.max(0, Math.min(255, Math.round(L + (v - L) * DEEP_POP)));
         return [f(r), f(g), f(b)];
     }
-    for (const b of BIOMES) {
+    function deriveTones(b) {
         b.ink = scaleRgb(b.fill, OUTLINE);
         b.dark = scaleRgb(b.fill, SHADE);
         b.face = b.fill.slice();
@@ -61,6 +61,7 @@
         b.map = hexRgb(scaleRgb(b.fill, MAP));
         b.mapDark = hexRgb(scaleRgb(deepTone(b.fill), MAP));
     }
+    for (const b of BIOMES) deriveTones(b);
 
     // Toughness = biome hard x ORE_TOUGH[ore], on top of the ore's own health
     // (terrainGrid.js ORE_HP: copper 1.8x plain, vein 2.2x, shard 3x,
@@ -261,8 +262,23 @@
     // biome colours. The weights are squared first: an even rgb mix of two
     // far-apart colours (sandstone and crystal) is a dull grey, so the seam
     // leans to whichever biome is ahead and only a rock or so is in between.
+    const TEAM_LOOK = { crystal: 'moss', magma: 'clay' };
+    const AMETHYST = { fill: [196, 160, 240], vary: [2, -2, 3], gem: [214, 150, 255], rimA: 0, ui: '#d2baf6' };
+    let teamTable = null;
+    function teamBiomes() {
+        if (teamTable) return teamTable;
+        teamTable = BIOMES.map((b) => {
+            const look = TEAM_LOOK[b.id] ? BIOMES[IDX[TEAM_LOOK[b.id]]] : b.id === 'obsidian' ? AMETHYST : b;
+            if (look === b) return b;
+            const t = Object.assign({}, b, { fill: look.fill.slice(), vary: look.vary.slice(), gem: look.gem.slice(), rimA: look.rimA, ui: look.ui });
+            deriveTones(t);
+            return t;
+        });
+        return teamTable;
+    }
     const _sw = new Array(N);
-    function tonesFor(w0, out, o, vl, vh) {
+    function tonesFor(w0, out, o, vl, vh, table) {
+        const BT = table || BIOMES;
         o = o | 0; vl = vl || 0; vh = vh || 0;
         let sum = 0;
         for (let i = 0; i < N; i++) { _sw[i] = w0[i] * w0[i]; sum += _sw[i]; }
@@ -272,18 +288,18 @@
         for (let i = 0; i < N; i++) {
             const wi = w[i];
             if (!wi) continue;
-            const v = BIOMES[i].vary;
+            const v = BT[i].vary;
             dr += wi * v[0]; dg += wi * v[1]; db += wi * v[2];
-            ra += wi * BIOMES[i].rimA;
-            ga += wi * (BIOMES[i].glow || 0);
-            va += wi * (BIOMES[i].vein || 0);
+            ra += wi * BT[i].rimA;
+            ga += wi * (BT[i].glow || 0);
+            va += wi * (BT[i].vein || 0);
         }
         for (let t = 0; t < NT; t++) {
             let r = 0, g = 0, b = 0, chroma = 0;
             for (let i = 0; i < N; i++) {
                 const wi = w[i];
                 if (!wi) continue;
-                const c = BIOMES[i][TONES[t]];
+                const c = BT[i][TONES[t]];
                 r += wi * c[0]; g += wi * c[1]; b += wi * c[2];
                 chroma += wi * (Math.max(c[0], c[1], c[2]) - Math.min(c[0], c[1], c[2]));
             }
@@ -312,12 +328,12 @@
     // by ore tier: copper, vein (azurite), shard, emerald
     const ORE_GEM = [null, [214, 128, 62], [88, 150, 236], [190, 92, 220], [52, 206, 128]];
     const _rw = new Array(N);
-    function rockTones(vi, vj, cols, rows, seed, out, o, ore) {
+    function rockTones(vi, vj, cols, rows, seed, out, o, ore, table) {
         o = o | 0;
         rockWeights(vi, vj, cols, rows, seed, _rw);
         const vl = hash(vi, vj, (seed | 0) * 5 + 901) * 2 - 1;
         const vh = hash(vi, vj, (seed | 0) * 5 + 902) * 2 - 1;
-        tonesFor(_rw, out, o, vl, vh);
+        tonesFor(_rw, out, o, vl, vh, table);
         if (ore) { deepen(out, o, out, o, ore); oreGem(out, o, ore); }
         return out;
     }
@@ -339,7 +355,7 @@
     return {
         BIOMES, N, IDX, TONES, NT, TONE_BYTES, ORE_TOUGH, ORE_DEEP, ORE_GEM, VARY_LUM,
         EDGE_OBSIDIAN, EDGE_MAGMA, EDGE_CRYSTAL, BLEND,
-        weightsAt, latticeUnit, cellAt, rockWeights, rockBiome, biomeAt, rockStats, tonesFor, rockTones, deepen, oreGem, toughness, dominant, deepTone,
+        weightsAt, latticeUnit, cellAt, rockWeights, rockBiome, biomeAt, rockStats, tonesFor, rockTones, deepen, oreGem, toughness, dominant, deepTone, teamBiomes,
         hash, fbm,
     };
 });

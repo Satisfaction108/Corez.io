@@ -159,6 +159,15 @@ function next(t = Date.now()) {
     return { entry: waiting.splice(best, 1)[0], fresh: false };
 }
 
+function drain(n) {
+    const out = [];
+    waiting.sort((x, y) => x.readyAt - y.readyAt);
+    while (out.length < n && waiting.length) out.push(waiting.shift());
+    while (out.length < n && ao.on && ao.bench.length) out.push(ao.bench.pop());
+    for (const e of out) e.readyAt = Date.now();
+    return out;
+}
+
 function trimTo(cap) {
     while (waiting.length > Math.max(0, cap)) {
         const w = waiting.shift();
@@ -185,4 +194,4 @@ function noteCarry(bot, n) {
     return true;
 }
 
-module.exports = { AO, setAlwaysOn, noteJoin, pickLeaver, logOff, retireAll, isRetiring, inRoster, takeRetired, seed, entryOf, identity, joinOpen, present, overdue, turnOpen, aoState, _ao: ao, DELAY_MS, DELAY_JITTER_MS, onBotGone, noteCarry, mayFill, next, trimTo, resetRaid, size, setEnabled, isEnabled, _waiting: waiting };
+module.exports = { AO, setAlwaysOn, noteJoin, pickLeaver, logOff, retireAll, isRetiring, inRoster, takeRetired, seed, entryOf, identity, joinOpen, present, overdue, turnOpen, aoState, _ao: ao, DELAY_MS, DELAY_JITTER_MS, onBotGone, noteCarry, mayFill, next, drain, trimTo, resetRaid, size, setEnabled, isEnabled, _waiting: waiting };
