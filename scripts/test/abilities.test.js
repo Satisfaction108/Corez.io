@@ -342,7 +342,7 @@ test('grapple: a miss reels back and spends no cooldown (bots too); a tank hit p
     cleanup(t, foe, bot);
 });
 
-test('burrow: a channel up to 10 s through rock, slower, no shooting, up again on the key', () => {
+test('burrow: a channel up to 6 s through rock, slower, no shooting, up again on the key', () => {
     clearDisc(-1700, 900, 160);
     const { s, t } = owner(-1700, 900, 'burrow');
     let solidAhead = 0;
@@ -374,9 +374,9 @@ test('burrow: a channel up to 10 s through rock, slower, no shooting, up again o
     cleanup(t);
 });
 
-test('burrow: runs out at 10 s and never leaves you inside rock', () => {
+test('burrow: runs out at 6 s and never leaves you inside rock', () => {
     const { s, t } = owner(0, 0, 'burrow');
-    assert.equal(ab.BURROW.maxMs, 10000);
+    assert.equal(ab.BURROW.maxMs, 6000);
     assert.ok(ab.use(t, 0, 0));
     clock += ab.BURROW.maxMs + 100;
     step(1);
@@ -462,7 +462,7 @@ test('shockwave: a tank in the way sets it off early; rock shatters in the blast
     const boom2 = throwShock(s2, t2, spot.x, spot.y);
     assert.ok(boom2[2] < spot.x - 200, 'stopped at the face: ' + (boom2[2] - spot.x));
     const broke = [...grid.rocks.values()].filter(r => !r.alive && !r.canyon && Math.hypot(r.worldCx - boom2[2], r.worldCy - boom2[3]) < ab.SHOCK.breakR - 40);
-    assert.ok(broke.length > 3, 'shattered round the blast: ' + broke.length);
+    assert.ok(broke.length >= 2, 'shattered round the blast: ' + broke.length);
     cleanup(t2);
     // a tank flung at a wall stops at it, never inside it
     clearDisc(-1700, 900, 160);

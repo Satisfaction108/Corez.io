@@ -1,14 +1,3 @@
-// Raid perks: points on the raid board earn picks of one of three perks. The
-// first comes at 5,000, and each later one costs much more than the one before
-// (pickAt: 5k, 20k, 45k, 80k...), so there is no cap on how many picks a long
-// raid can earn; every perk itself stops at tier IV (the two hidden-gun perks
-// at III), which is what keeps a build from running away. The build lives on
-// your raid board row
-// (dig_royale's raidStats), so every new body is handed it again, the way
-// bought stat points come back (shop.applyStatPoints). A death costs two
-// random perks (onDeath) and starts the milestones over from the new score.
-// A new raid, or the /raidreset staging lobby, starts everyone with an empty build.
-//
 // Ported from the Dig Deep prototype (deepPerks.js) and retuned for PvP:
 // mining, utility and mobility are strong and offered more often, anything
 // that adds damage to a fight is small and offered less. Rock-only perks
@@ -27,8 +16,6 @@
 // no game running; scripts/test/raidPerks.test.js covers them.
 'use strict';
 
-// Pick k comes STEP * k^2 points in: 5,000, 20,000, 45,000, 80,000... No
-// overall cap: the curve itself is the limit.
 const STEP = 5000;
 const OFFER_N = 3;
 // The tier cap: no perk offers a fifth level. The client draws the pips from
@@ -39,17 +26,17 @@ const MAX_TIER = 4;
 // utility 3, survival 2, anything that adds damage to a fight 1).
 // icon: the client's glyph key (raidPerks.js GLYPH).
 const CATALOG = [
-    { id: 'drill',      name: 'Power Drill',     icon: 'drill',      max: MAX_TIER, w: 3, kind: 'mine',  desc: 'You mine 20% faster.' },
+    { id: 'drill',      name: 'Power Drill',     icon: 'drill',      max: MAX_TIER, w: 3, kind: 'mine',  desc: 'You mine 15% faster.' },
     { id: 'blast',      name: 'Blast Rounds',    icon: 'blast',      max: MAX_TIER, w: 3, kind: 'mine',  desc: 'Shots that hit rock crack the rock around them.' },
     { id: 'rich',       name: 'Rich Veins',      icon: 'rich',       max: MAX_TIER, w: 3, kind: 'mine',  desc: 'Ore you break drops 12% more gems.' },
     { id: 'magnet',     name: 'Ore Magnet',      icon: 'magnet',     max: MAX_TIER, w: 3, kind: 'util',  desc: 'Gems fly to you from 40% farther away.' },
     { id: 'quake',      name: 'Seismic Pulse',   icon: 'quake',      max: MAX_TIER, w: 3, kind: 'mine',  desc: 'Every few seconds a pulse cracks the rock around you.' },
     { id: 'chain',      name: 'Chain Spark',     icon: 'chain',      max: MAX_TIER, w: 3, kind: 'mine',  desc: 'Hitting rock can send a spark into nearby rock.' },
-    { id: 'pierce',     name: 'Piercing Rounds', icon: 'pierce',     max: MAX_TIER, w: 3, kind: 'mine',  desc: 'Shots punch through one more rock.' },
+    { id: 'pierce',     name: 'Piercing Rounds', icon: 'pierce',     max: 2, w: 3, kind: 'mine',  desc: 'Shots punch through one more rock.' },
     { id: 'crit',       name: 'Lucky Strike',    icon: 'crit',       max: MAX_TIER, w: 3, kind: 'mine',  desc: '12% of your shots hit rock for triple damage.' },
     { id: 'grind',      name: 'Hull Grinder',    icon: 'grind',      max: MAX_TIER, w: 3, kind: 'mine',  desc: 'Ramming rock grinds it down 25% faster.' },
     { id: 'prospector', name: 'Prospector',      icon: 'prospector', max: MAX_TIER, w: 3, kind: 'mine',  desc: 'Plain rocks you break have a higher chance to drop bonus copper.' },
-    { id: 'shatter',    name: 'Quake Shatter',   icon: 'shatter',    max: MAX_TIER, w: 3, kind: 'mine',  desc: 'Breaking a rock blasts neighboring rocks for 18% of their health.' },
+    { id: 'shatter',    name: 'Quake Shatter',   icon: 'shatter',    max: MAX_TIER, w: 3, kind: 'mine',  desc: 'Breaking a rock blasts neighboring rocks for 10% of their health.' },
     { id: 'chipper',    name: 'Chip Collector',  icon: 'chipper',    max: MAX_TIER, w: 3, kind: 'mine',  desc: 'Chipping ore rocks pays out 25% more gems right into your satchel.' },
     { id: 'satchel',    name: 'Deep Pockets',    icon: 'satchel',    max: MAX_TIER, w: 3, kind: 'util',  desc: 'Your satchel holds 4,000 more gems per stack.' },
     { id: 'tractor',    name: 'Tractor Beam',    icon: 'tractor',    max: MAX_TIER, w: 3, kind: 'util',  desc: 'Gems pulled by your magnet fly into your tank 30% faster.' },
@@ -69,15 +56,10 @@ const BY_ID = new Map(CATALOG.map(p => [p.id, p]));
 
 // ── milestones ───────────────────────────────────────────────────────────
 // The score pick k (1-based) comes at.
-function pickAt(k) { return STEP * k * k; }
-// How many picks a board score has earned in all. (No cap: the quadratic
-// curve keeps late picks far apart. The bound only stops a silly value from
-// spinning forever.)
+function pickAt(k) { return STEP * k; }
 function earnedAt(score) {
     const s = +score || 0;
-    let k = 0;
-    while (k < 100000 && pickAt(k + 1) <= s) k++;
-    return k;
+    return s > 0 ? Math.min(100000, Math.floor(s / STEP)) : 0;
 }
 // The score the next pick comes at. There is always a next one.
 function nextAt(granted) { return pickAt((granted | 0) + 1); }
@@ -85,7 +67,7 @@ function nextAt(granted) { return pickAt((granted | 0) + 1); }
 // A build from anywhere (a save, an update, an older rule set) brought in line
 // with today's catalog: perks that are gone or past tier IV are cut. Total
 // picks are not capped any more, so old builds keep every valid stack.
-const RULES = 3;
+const RULES = 4;
 function sanitize(build) {
     if (!build || build.rules === RULES) return build;
     const perks = {};
@@ -114,24 +96,13 @@ function newBuild() {
     return { perks: {}, offer: null, pending: 0, granted: 0, base: 0, v: 0, rules: RULES };
 }
 
-// A death: two random perks go (every level of each), anything unpicked goes,
-// and the milestones start over (5,000, 15,000, ...) from the new score.
-const DEATH_LOSS = 2;
-function onDeath(build, score, rng = Math.random) {
+const DEATH_LOSS = 0;
+function onDeath(build, score) {
     if (!build) return [];
-    const ids = Object.keys(build.perks || {}).filter(id => (build.perks[id] | 0) > 0);
-    const lost = [];
-    while (lost.length < DEATH_LOSS && ids.length) {
-        const id = ids.splice(Math.floor(rng() * ids.length), 1)[0];
-        delete build.perks[id];
-        lost.push(id);
-    }
-    build.offer = null;
-    build.pending = 0;
     build.granted = 0;
     build.base = Math.max(0, +score || 0);
     build.v = (build.v | 0) + 1;
-    return lost;
+    return [];
 }
 
 // Three different perks that still have room, weighted toward mining and
@@ -256,7 +227,7 @@ function computeFx(perks) {
     let any = false;
     for (const p of CATALOG) if (n(p.id) > 0) { any = true; break; }
     if (!any) return null;
-    const mine = 1 + 0.2 * n('drill');
+    const mine = 1 + 0.15 * n('drill');
     return {
         mine,
         budget: mine * (1 + 0.2 * n('twin') + 0.15 * n('drones')),
@@ -266,7 +237,7 @@ function computeFx(perks) {
         health: 1 + 0.07 * n('hide'),
         reload: 1 + 0.05 * n('reload'),
         value: 1 + 0.12 * n('rich'),
-        blastR: n('blast') ? 60 + 30 * n('blast') : 0,
+        blastR: n('blast') ? 45 + 18 * n('blast') : 0,
         chain: n('chain'),
         pierce: n('pierce'),
         crit: Math.min(0.6, 0.12 * n('crit')),
@@ -276,7 +247,7 @@ function computeFx(perks) {
         drones: n('drones'),
         grind: 1 + 0.25 * n('grind'),
         prospector: n('prospector'),
-        shatter: 0.18 * n('shatter'),
+        shatter: 0.1 * n('shatter'),
         chipper: 1 + 0.25 * n('chipper'),
         tractor: 1 + 0.3 * n('tractor'),
         stormward: Math.max(0.2, 1 - 0.15 * n('stormward')),
@@ -492,7 +463,7 @@ function afterRockHit(shot, owner, hitRocks, tg, raw) {
             if (tg.rocksHitByCircle) {
                 const hx = rockX(hr), hy = rockY(hr);
                 scratch.length = 0;
-                const nbs = tg.rocksHitByCircle(hx, hy, 110, scratch).slice();
+                const nbs = tg.rocksHitByCircle(hx, hy, 85, scratch).slice();
                 scratch.length = 0;
                 for (const nb of nbs) {
                     if (nb === hr || hitRocks.includes(nb)) continue;
@@ -501,7 +472,7 @@ function afterRockHit(shot, owner, hitRocks, tg, raw) {
             }
         }
     }
-    if (fx.blastR > 0 && t - (owner._pkBlastAt || 0) >= 90) {
+    if (fx.blastR > 0 && t - (owner._pkBlastAt || 0) >= 160) {
         owner._pkBlastAt = t;
         scratch.length = 0;
         const near = tg.rocksHitByCircle(x, y, fx.blastR, scratch).slice();
@@ -509,12 +480,12 @@ function afterRockHit(shot, owner, hitRocks, tg, raw) {
         let broke = 0;
         for (const rock of near) {
             if (hitRocks.includes(rock)) continue;
-            if (breakRock(tg, rock, raw * 0.45, owner, rockX(rock), rockY(rock))) broke++;
+            if (breakRock(tg, rock, raw * 0.3, owner, rockX(rock), rockY(rock))) broke++;
         }
         if (broke >= 3 && owner.socket && global.royaleAch) global.royaleAch.onPerkBurst(owner, broke);
         fxNear(x, y, 'pkblast', Math.round(fx.blastR));
     }
-    if (fx.chain > 0 && t - (owner._pkChainAt || 0) >= 220 && Math.random() < 0.25 + 0.1 * fx.chain) {
+    if (fx.chain > 0 && t - (owner._pkChainAt || 0) >= 350 && Math.random() < 0.15 + 0.07 * fx.chain) {
         owner._pkChainAt = t;
         const R = 280;
         const cands = [];
@@ -528,8 +499,8 @@ function afterRockHit(shot, owner, hitRocks, tg, raw) {
         cands.sort((a, b) => a.d - b.d);
         const arcs = [];
         let broke = 0;
-        for (const c of cands.slice(0, 1 + fx.chain)) {
-            if (breakRock(tg, c.rock, raw * 0.6, owner, c.rx, c.ry)) broke++;
+        for (const c of cands.slice(0, 1 + Math.floor(fx.chain / 2))) {
+            if (breakRock(tg, c.rock, raw * 0.4, owner, c.rx, c.ry)) broke++;
             arcs.push(Math.round(c.rx), Math.round(c.ry));
         }
         if (broke >= 3 && owner.socket && global.royaleAch) global.royaleAch.onPerkBurst(owner, broke);
@@ -563,17 +534,17 @@ function tickBody(body, t, dt) {
     if (fx.quake > 0) {
         if (!body._pkQuakeAt) body._pkQuakeAt = t + 2500;
         if (t >= body._pkQuakeAt) {
-            body._pkQuakeAt = t + (fx.quake >= 2 ? 5000 : 7000);
+            body._pkQuakeAt = t + (fx.quake >= 3 ? 7000 : 9000);
             if (body.burrowUntil && t < body.burrowUntil) return;
             if (body.padSafe || body.onVaultPad || body.vaultOnPad) return;
             const tg = tgOf();
             if (tg && tg.rocksHitByCircle) {
-                const R = (body.realSize || 30) + 130 + 50 * fx.quake;
+                const R = (body.realSize || 30) + 90 + 30 * fx.quake;
                 scratch.length = 0;
                 const near = tg.rocksHitByCircle(body.x, body.y, R, scratch).slice();
                 scratch.length = 0;
                 for (const rock of near) {
-                    breakRock(tg, rock, rock.maxHealth * (0.3 + 0.1 * fx.quake), body, rockX(rock), rockY(rock));
+                    breakRock(tg, rock, rock.maxHealth * (0.2 + 0.06 * fx.quake), body, rockX(rock), rockY(rock));
                 }
                 fxNear(body.x, body.y, 'pkquake', Math.round(R));
             }

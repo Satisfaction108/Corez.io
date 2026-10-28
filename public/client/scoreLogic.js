@@ -2,13 +2,13 @@
 
 export const RULE = "Points = banked gems + kills & bonuses + crowns";
 export const RULE_SHORT = "PTS = BANKED + KILLS + CROWNS";
-export const RULE_BODY = "Whoever has the most points when the raid ends wins. Dying halves your points and takes two random perks, and you respawn with 60% of your banked gems. " +
+export const RULE_BODY = "Whoever has the most points when the raid ends wins. Dying halves your points (you keep your perks), and you respawn with 60% of your banked gems. " +
     "Carried gems only count once you bank them. Past 5,000 in a raid, each banked gem counts half a point (you keep every gem). " +
     "Kills, streaks, bosses and quests give bonus points. " +
     "A crown gives points every second, but whoever kills you takes it and up to 30% of your kill and crown points.";
 
 export const RULE_BODY_AO = "Your points add up all day and reset at 00:00 UTC. The top 3 on the daily board win gemdust and a crown by their name for the next day. " +
-    "Dying halves your points and takes two random perks, and you respawn with 60% of your banked gems. Carried gems only count once you bank them. Past 5,000 in a day, each banked gem counts half a point (you keep every gem). " +
+    "Dying halves your points (you keep your perks), and you respawn with 60% of your banked gems. Carried gems only count once you bank them. Past 5,000 in a day, each banked gem counts half a point (you keep every gem). " +
     "Kills, streaks, bosses, quests and events give bonus points. " +
     "The top 3 of each event get a crown that gives points every second, but whoever kills you takes it and up to 30% of your kill and crown points.";
 export function ruleBody(ao) { return ao ? RULE_BODY_AO : RULE_BODY; }

@@ -1,5 +1,5 @@
 // Raid perks on the HUD: at each perk milestone on the raid board the server
-// offers three perks (PK packet); a death takes two random perks back.
+// offers three perks (PK packet).
 // This file draws and handles:
 //
 //   cards   a compact row low in the middle, above your name and satchel,
@@ -388,7 +388,7 @@ function drawStrip(c, o, st, view, now) {
         const lv = ROMAN[p.n | 0] || "I", tx = r.x + r.h + 1, ty = r.y - lift + r.h / 2 + 0.5;
         lvPill(c, lv, tx, ty, 12);
         if (o.mouse && L.rectAt([r], o.mouse.x, o.mouse.y) >= 0 && A.queueTip) {
-            A.queueTip(perkLabel(p), (p.desc || "") + " You have level " + (p.n | 0 || 1) + (p.max ? " of " + p.max : "") + ". Dying takes two random perks.", r.x + r.w / 2, r.y);
+            A.queueTip(perkLabel(p), (p.desc || "") + " You have level " + (p.n | 0 || 1) + (p.max ? " of " + p.max : "") + ". You keep it when you die.", r.x + r.w / 2, r.y);
         }
     }
     // the ones left out, behind a "+N" chip (hover lists them)

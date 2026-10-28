@@ -3017,15 +3017,6 @@ function onEvent(ev) {
 }
 
 // ── raid perks (terrain/raidPerks.js) ─────────────────────────────────────
-// Points on the board earn picks of three perks (raidPerks.pickAt: 5,000,
-// 20,000, 45,000, 80,000...). There is no cap on picks, but every perk stops
-// at tier IV. The build sits on the board row (raidStats), follows a reconnect
-// (claimResume re-keys the row) and is gone when the rows are: a new raid, or
-// the /raidreset staging wipe. A death halves the board score (deathCut), takes
-// two random perks and any open offer, and the milestones count again from the
-// halved score. Milestones reached together queue up behind the open offer.
-// Bots take a random pick a few seconds later.
-// ROYALE_PERKS=0 switches the whole thing off.
 const PERKS_ON = process.env.ROYALE_PERKS !== '0';
 const PERK_TICK_MS = 250;
 const BOT_PICK_MIN_MS = 2500, BOT_PICK_MAX_MS = 7000;
@@ -3628,6 +3619,7 @@ function resumeTeam(socket) {
     if (!snap || snap.raidId !== raidId || snap.team == null || Config.royale_duos) return null;
     // the hold has done its job: from here the colour is this team's again
     releaseSnapColor(snap);
+    if (teamMode.isActive()) return teamMode.layout.isTeam(snap.team) ? { team: snap.team, color: teamMode.colorOf(snap.team) } : null;
     for (const e of entities.values()) {
         if (e && (e.isPlayer || e.isBot) && !e.isDead?.() && e.team === snap.team) return null;
     }

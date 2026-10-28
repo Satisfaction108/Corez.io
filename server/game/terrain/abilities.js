@@ -71,7 +71,7 @@ const AB_BY_ID = new Map(ABILITIES.map(a => [a.id, a]));
 // bites. A miss reels back in backMs and spends no cooldown, only missLockMs.
 const GRAPPLE = { range: 910, step: 18, speed: 28, maxMs: 1400, flyPerMs: 4, backMs: 250, missLockMs: 400 };
 // a channel: cooldown = cdBase + cdPerSec for every second spent down
-const BURROW = { maxMs: 10000, minMs: 600, speedMult: 0.75, cdBase: 45000, cdPerSec: 0, alpha: 0.6, surfaceR: 1.7 };
+const BURROW = { maxMs: 6000, minMs: 600, speedMult: 0.75, cdBase: 45000, cdPerSec: 0, alpha: 0.6, surfaceR: 1.7 };
 // A thrown orb (throwSpeed units per ms) that blows where it lands, or on
 // the first rock or tank it touches. Everyone in `radius` is flung: k = 1 -
 // d / reach, launch speed fling0 + fling1 * k^1.1 (units per tick), easing
@@ -79,7 +79,7 @@ const BURROW = { maxMs: 10000, minMs: 600, speedMult: 0.75, cdBase: 45000, cdPer
 // tanks fly a little less, never under bigMin. Damage (enemies only) falls
 // off from hpNear to hpFar of max health.
 const SHOCK = {
-    radius: 430, breakR: 280, crackFrac: 0.6, throwSpeed: 1.0, orbR: 14,
+    radius: 430, breakR: 180, crackFrac: 0.35, throwSpeed: 1.0, orbR: 14,
     fling0: 22, fling1: 50, flingMs: 450, decay: 0.91, bigMin: 0.8, bossPush: 0.15,
     hpNear: 0.16, hpFar: 0.03,
 };

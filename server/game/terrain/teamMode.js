@@ -121,17 +121,50 @@ function joinCode(socket, code, t = Date.now()) {
     const c = countTeams();
     if (c.humans[inv.team] - c.humans[L.other(inv.team)] >= INVITE_MAX_LEAD) return { ok: false, why: "The " + L.teamName(inv.team) + " team is full right now, so you'll join the other team." };
     socket._tmTeam = inv.team;
+    rememberTeam(socket, inv.team, t);
     return { ok: true, team: inv.team, by: inv.by };
 }
 
-function teamForHuman(socket, kept) {
-    if (socket && L.isTeam(socket._tmTeam)) return socket._tmTeam;
-    if (kept && L.isTeam(kept.team)) { if (socket) socket._tmTeam = kept.team; return kept.team; }
-    const self = socket && socket._tmTeam;
-    const c = countTeams();
-    if (self) c.humans[self] = Math.max(0, c.humans[self] - 1);
-    const team = pickSmaller(c.humans, c.all);
+const REMEMBER_MS = 3 * 24 * 3600_000;
+const REMEMBER_MAX_LEAD = 3;
+const REMEMBER_CAP = 5000;
+const remembered = new Map();
+
+function whoKey(socket) {
+    if (!socket) return null;
+    if (socket.account && socket.account.id) return 'a:' + socket.account.id;
+    if (typeof socket.guestId === 'string' && socket.guestId) return 'g:' + socket.guestId;
+    return null;
+}
+
+function rememberTeam(socket, team, t = Date.now()) {
+    const k = whoKey(socket);
+    if (!k || !L.isTeam(team)) return;
+    remembered.delete(k);
+    remembered.set(k, { team, at: t });
+    while (remembered.size > REMEMBER_CAP) remembered.delete(remembered.keys().next().value);
+}
+
+function rememberedTeam(socket, t = Date.now()) {
+    const k = whoKey(socket);
+    const r = k ? remembered.get(k) : null;
+    if (!r) return 0;
+    if (t - r.at > REMEMBER_MS || !L.isTeam(r.team)) { remembered.delete(k); return 0; }
+    return r.team;
+}
+
+function teamForHuman(socket, kept, t = Date.now()) {
+    let team = 0;
+    if (socket && L.isTeam(socket._tmTeam)) team = socket._tmTeam;
+    else if (kept && L.isTeam(kept.team)) team = kept.team;
+    else {
+        const c = countTeams();
+        const prev = rememberedTeam(socket, t);
+        if (L.isTeam(prev) && c.humans[prev] - c.humans[L.other(prev)] < REMEMBER_MAX_LEAD) team = prev;
+        else team = pickSmaller(c.humans, c.all);
+    }
     if (socket) socket._tmTeam = team;
+    rememberTeam(socket, team, t);
     return team;
 }
 
@@ -218,6 +251,12 @@ function loadScore() {
         const j = JSON.parse(fs.readFileSync(FILE, 'utf8'));
         if (j && j.day === dayKey()) { st.score[BLUE] = j.blue | 0; st.score[RED] = j.red | 0; st.day = j.day; }
         if (j && j.lastWinner) st.lastWinner = j.lastWinner;
+        const t = Date.now();
+        if (j && j.picks && typeof j.picks === 'object') {
+            for (const [k, v] of Object.entries(j.picks)) {
+                if (Array.isArray(v) && L.isTeam(v[0]) && t - (+v[1] || 0) <= REMEMBER_MS && !remembered.has(k)) remembered.set(k, { team: v[0], at: +v[1] });
+            }
+        }
     } catch { /* a fresh day */ }
 }
 
@@ -227,7 +266,9 @@ function saveScore(force = false) {
     st.savedAt = t;
     try {
         fs.mkdirSync(path.dirname(FILE), { recursive: true });
-        fs.writeFileSync(FILE, JSON.stringify({ day: st.day, blue: st.score[BLUE], red: st.score[RED], lastWinner: st.lastWinner }));
+        const picks = {};
+        for (const [k, v] of remembered) if (t - v.at <= REMEMBER_MS) picks[k] = [v.team, v.at];
+        fs.writeFileSync(FILE, JSON.stringify({ day: st.day, blue: st.score[BLUE], red: st.score[RED], lastWinner: st.lastWinner, picks }));
     } catch { /* kept in memory */ }
 }
 

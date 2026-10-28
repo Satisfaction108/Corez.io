@@ -10,13 +10,13 @@ const WARN_MS = 60_000;
 let state = null;
 
 function modeList() {
-    const raw = String(process.env.ROYALE_MODES || '2tdm').toLowerCase().split(/[\s,]+/).filter(m => MODES.includes(m));
-    return raw.length ? raw : ['2tdm'];
+    const raw = String(process.env.ROYALE_MODES || '2tdm,ffa').toLowerCase().split(/[\s,]+/).filter(m => MODES.includes(m));
+    return raw.length ? raw : ['2tdm', 'ffa'];
 }
 
 function blockMs() {
     const v = parseFloat(process.env.ROYALE_MODE_MIN);
-    return (Number.isFinite(v) && v > 0 ? v : 30) * 60_000;
+    return (Number.isFinite(v) && v > 0 ? v : 1440) * 60_000;
 }
 
 function load() {

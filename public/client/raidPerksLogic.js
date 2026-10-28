@@ -146,7 +146,7 @@ export function baseName(name) { return String(name || "").replace(/\s+(?:I|II|I
 // the level this pick gives you (a perk held at n goes to n + 1)
 export function nextLevel(p) { return Math.max(1, ((p && p.n) | 0) + 1); }
 // hover: the whole description and what changes, never cut
-export function lastsText() { return "Dying takes two random perks."; }
+export function lastsText() { return "You keep your perks when you die."; }
 export function hoverText(p, ao) {
     if (!p) return null;
     const name = baseName(p.name || p.id), lv = nextLevel(p), max = (p.max | 0);
@@ -257,14 +257,14 @@ export function progress(score, next, step) {
 }
 
 // ── the death card ─────────────────────────────────────────────────────
-export const DEATH_LINE = "Dying took two random perks and half your points.";
+export const DEATH_LINE = "Dying halved your points. You kept all your perks.";
 export const DEATH_LINE_AO = DEATH_LINE;
 export function deathLine(build, ao) { return totalPicks(build) > 0 ? (ao ? DEATH_LINE_AO : DEATH_LINE) : ""; }
 
 // ── the first offer's intro ────────────────────────────────────────────
-export const INTRO_TEXT = "Your first perk comes at 5,000 points and each one after costs much more. Each perk stacks to tier IV. Dying halves your points, takes two random perks and starts the count over.";
+export const INTRO_TEXT = "You get a new perk every 5,000 points, and each perk stacks to tier IV. Dying halves your points, but you keep your perks.";
 export const INTRO_TEXT_AO = INTRO_TEXT;
 export function badgeTip(st, score) {
     if (!(st && st.next > 0)) return "You have every perk the raid offers.";
-    return "Each new perk costs more than the last. Next one at " + fmtNum(st.next) + ", you have " + fmtNum(score) + ".";
+    return "You get a new perk every 5,000 points. Next one at " + fmtNum(st.next) + ", you have " + fmtNum(score) + ".";
 }
