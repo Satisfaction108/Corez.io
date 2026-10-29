@@ -1,80 +1,84 @@
 # Corez.io
 
-A 2D tank game where you mine for gems, bank them, and fight everyone else doing the same thing. You play it in your browser at **https://corez.io**.
+An online 2D tank game where you mine, and bank gems and battle others doing the same.
 
-The map is mostly rock. You shoot through it to dig out gems, and you carry them until you drop them off at a vault. If you die before you bank, whoever killed you gets a lot of what you were carrying. Points level up your tank, and the tank tree works like arras, so you pick a new class as you grow.
+The map is made up of rock. You can shoot through this and mine gems. Once gathered you can carry them to the vault to bank them. If you are killed you will give most of your carried gems to the player who killed you. As you gain points you will level up your tank. The tank tree works similar to arras, giving you a new class.
 
-There's no lobby or match to wait for. The world is always running, and you just press Play and drop in.
+No lobbies or matches, play now.
 
-Come say hi on the **[Discord](https://discord.gg/bx5FK3CMwp)**.
+**[Come chat on Discord](https://discord.gg/bx5FK3CMwp)**
 
-## How it plays
+## Gameplay
 
-The game switches mode every day. One day it's FFA, the next day it's 2TDM, and it keeps going back and forth.
+Every day we cycle between **FFA** and **2TDM**.
 
-In **FFA** it's everyone for themselves. Mine, bank, and try to finish the day high on the leaderboard.
+During **FFA** it is free for all. Try and mine, bank and end the day high on the leaderboards.
 
-In **2TDM** you're on Blue or Red. Each team has a base, and stepping onto the enemy's tiles kills you instantly. Banking gems adds to your team's score. Banking and winning fights also fill a War Meter, which you can spend on things like supply crates or a Titan that walks over to the enemy base. If you reload the page you stay on the same team.
+During **2TDM** you will be either on Blue or Red. Each team will have a base. Stepping onto the enemy team's tiles will kill you instantly. Mining gems will increase your team's score. Mining and winning battles will increase your War Meter. This can be used to buy different items like supply crates and a Titan which walks to the enemy base. If you refresh the page you will stay on the same team.
 
-Some other things you'll run into:
+Other features:
 
-- **Perks.** You get to pick a new perk every 5,000 points. They stack up to tier IV.
-- **Dying.** You lose half your points but keep your perks, and you come back with part of your banked gems.
-- **Abilities** like the Grapple Hook, Shockwave, Barricade and Launch Pad. You can buy them at shop pads or pick them up from chests.
-- **Events** every few minutes: Core Siege, Gem Rush, King of the Vault, Boss Hunt, Meteor Shower and Storm Circle (FFA only).
-- **Hunted.** Whoever is #1 on the leaderboard gets a bounty on their head.
-- **Bots** that mine, bank and fight, so the world never feels empty.
-- **The tank tree.** Press T in game to see where you are and everything you can still upgrade into.
+- **Perks** - Every 5000 points you can choose a new perk. Up to tier IV.
+- **Death** - You will lose half your points but retain your perks. You will spawn with some of your banked gems.
+- **Abilities** - Grapple Hook, Shockwave, Barricade and Launch Pad can be purchased from shop pads, or found in chests.
+- **Events** - Every few minutes there will be events. Core Siege, Gem Rush, King of the Vault, Boss Hunt, Meteor Shower and Storm Circle (FFA only).
+- **Hunted** - The player who is #1 on the leaderboard will become hunted.
+- **Bots** - There are bots in the game that will mine, bank and battle. Ensuring the world never feels empty.
+- **Tank Tree** - Press T during the game to view what tanks you are and can upgrade to.
 
 ## Accounts
 
-You can play as a guest. If you make an account (with Discord or a username), your stuff gets saved: your level, rank, gemdust and skins. You earn gemdust by playing and spend it in the Item Shop, which changes every day. There are also friends, daily quests, achievements and a ranked ladder that goes from Bronze up to Legend.
+You can play as a guest. If you make an account using Discord or username you will save your progress. This includes your level, rank, gemdust and skins. Gemdust can be earned by playing and used in the Item Shop. This changes every day. Friends, daily quests, achievements and a ranked leaderboard (Bronze - Legend) are all available.
 
-## Running it yourself
+## Hosting
 
-You need Node.js 22.13 or newer. The account system uses Node's built-in SQLite, and older versions don't have it.
+To run you will need Node.js 22.13 or above. The account system uses Node's built in SQLite so older versions won't work.
+
+Install dependencies:
 
 ```bash
 npm install
 ```
 
+Run:
+
 ```bash
 npm start
 ```
 
-Then open http://localhost:3000.
+Go to http://localhost:3000.
 
-Game settings are in `server/config.js`. Secrets go in `server/.env`, and `server/.env.example` lists every option, including Discord login. You don't need a `.env` to run it. Without one, everyone just plays as a guest.
+Config for the game can be found in `server/config.js`. Secrets can be stored in `server/.env`. All options are listed in `server/.env.example`. You do not need to have a `.env` file. If you don't then everyone will play as a guest.
 
-When you run it locally, the browser loads the normal code from `public/client`. In production (`NODE_ENV=production`) it loads an obfuscated copy from `build/public` instead. `npm run build` makes that copy, and `scripts/deploy.sh` runs the build for you. If you want to try the obfuscated build locally, set `CLIENT_BUILD=obfuscated`. Only edit files in `public/client`. The `build/` folder gets regenerated and isn't committed.
+When running locally you will load the un-obfuscated code from `public/client`. When running in production (`NODE_ENV=production`) you will load the obfuscated code from `build/public`. This can be built using `npm run build`. This can also be done using `scripts/deploy.sh`. If you want to test the obfuscated code locally then set `CLIENT_BUILD=obfuscated`. Only edit files inside `public/client`. The contents of `build/` will be rebuilt and not committed.
 
-A few environment variables you might want:
+Some useful environment variables:
 
-- `ROYALE_MODES` picks which modes rotate. The default is `2tdm,ffa`, and setting just one keeps the server on that mode.
-- `ROYALE_MODE_MIN` sets how many minutes each mode lasts. The default is 1440, which is one day.
-- `ROYALE_ARMS_RACE=1` turns on the Arms Race tank tree.
+- `ROYALE_MODES` - This will determine the modes to cycle through. Default is `2tdm,ffa`. If you only set 1 mode then it will always run on that mode.
+- `ROYALE_MODE_MIN` - Sets how long each mode should run for. Default is 1440 (1 day).
+- `ROYALE_ARMS_RACE=1` - Enables the Arms Race tank tree.
 
-## Where things are
+## Files
 
-- `index.js` starts everything.
-- `server/game/index.js` has the main game loop.
-- `server/game/gamemodes/scripts/dig_royale.js` has most of the game rules: spawning, scoring and dying.
-- `server/game/terrain/` has the rock, mining, vaults, shops, perks, abilities, events, teams and mode rotation.
-- `server/accounts/` has accounts, ranked, gemdust, the Item Shop, friends, quests and the Discord bot.
-- `server/lib/definitions/` has the tank, bullet and boss definitions.
-- `shared/` has code that both the server and the browser use, like ranks and cosmetics.
-- `public/index.html` is the home page and game canvas.
-- `public/client/app.js` draws the game and the HUD.
-- `public/client/account/` has the menu screens.
-- `public/changelog.md` has the update notes players see in game.
-- `scripts/test/` has the tests. You run each one on its own, for example `node scripts/test/accounts.test.js`.
+- Main entry point: `index.js`.
+- Main game loop: `server/game/index.js`.
+- Most of the gameplay logic can be found in `server/game/gamemodes/scripts/dig_royale.js`. This includes spawning, scoring and death.
+- Terrain, rock, mining, vaults, shops, perks, abilities, events, teams and mode cycling can be found in `server/game/terrain/`.
+- Accounts, ranked, gemdust, item shop, friends, quests and discord bot can be found in `server/accounts/`.
+- Tank, bullet and boss definitions can be found in `server/lib/definitions/`.
+- Shared files for the server and client. Ranks and cosmetcs are in `shared/`.
+- Home page and game canvas: `public/index.html`.
+- Game rendering and HUD: `public/client/app.js`.
+- Menu screens: `public/client/account/`.
+- Update notes: `public/changelog.md`.
+- Testing scripts: `scripts/test/`. Run each script individually. For example `node scripts/test/accounts.test.js`.
 
 ## Credits
 
-Corez is built on top of the open-source arras.io code. Everyone who helped is listed in `credits.md`.
+Corez is based on the open source arras.io code. Everyone who has helped can be found in `credits.md`.
 
-## License
+## Licence
 
-Corez.io is licensed under the **GNU Affero General Public License v3.0 or later** (see `LICENSE`). You can read the code, run it, change it and share it. If you host a modified version that other people play, you have to publish your full source under the same license.
+Corez.io is released under the **GNU Affero General Public License v3.0+**. (See `LICENSE`). This means you can view, run, modify and share the code. However if you host a modified version of the game that others play you must release your full source under the same licence.
 
-The arras.io code it's built on keeps its original MIT License (`LICENSE-ARRAS`). The license doesn't cover the Corez.io name or logo, so if you run your own copy, please give it a different name and logo. `NOTICE` has the details.
+The arras.io code remains MIT Licensed (`LICENSE-ARRAS`). This does not apply to the name or logo. If you are hosting your own copy please rename it and give it a new logo. See `NOTICE` for details.
