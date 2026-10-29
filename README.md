@@ -1,6 +1,6 @@
 # Corez.io
 
-An online 2D tank game where you mine, and bank gems and battle others doing the same.
+An online 2D tank game where you mine, and bank gems and battle others doing the same. Play it at **https://corez.io**.
 
 The map is made up of rock. You can shoot through this and mine gems. Once gathered you can carry them to the vault to bank them. If you are killed you will give most of your carried gems to the player who killed you. As you gain points you will level up your tank. The tank tree works similar to arras, giving you a new class.
 
