@@ -38,15 +38,16 @@ function mkUser() {
 const gid = (n) => (n.toString(16) + 'e'.repeat(32)).slice(0, 32);
 const ds = () => require('../../server/accounts/dailyScores');
 
-test('scheduler: no immediate repeats, every kind comes round, first six all different', () => {
+test('scheduler: no immediate repeats, every kind comes round, the first round all different', () => {
     const rng = lcg(7);
     const hist = [];
+    const n = S.ORDER.length;
     for (let i = 0; i < 3000; i++) hist.push(S.pickKind(hist, rng));
     for (let i = 1; i < hist.length; i++) assert.notEqual(hist[i], hist[i - 1], 'repeat at ' + i);
-    assert.equal(new Set(hist.slice(0, 6)).size, 6, 'the first six are all different');
-    for (let i = 0; i + 9 <= hist.length; i++) assert.equal(new Set(hist.slice(i, i + 9)).size, 6, 'window at ' + i);
-    for (let i = 3; i < hist.length; i++) assert.ok(!hist.slice(i - 3, i).includes(hist[i]), 'not one of the last three at ' + i);
-    for (const k of S.ORDER) assert.ok(hist.filter(x => x === k).length > 300, k + ' is picked fairly often');
+    assert.equal(new Set(hist.slice(0, n)).size, n, 'the first round is all different');
+    for (let i = 0; i + n + 2 <= hist.length; i++) assert.equal(new Set(hist.slice(i, i + n + 2)).size, n, 'window at ' + i);
+    for (let i = n - 1; i < hist.length; i++) assert.ok(!hist.slice(i - (n - 1), i).includes(hist[i]), 'not one of the last few at ' + i);
+    for (const k of S.ORDER) assert.ok(hist.filter(x => x === k).length > 3000 / n * 0.6, k + ' is picked fairly often');
     assert.equal(S.pickKind(['storm'], rng, ['storm']), 'storm', 'a single kind still works');
 });
 

@@ -180,7 +180,7 @@ test('triggers: a sample from every category', () => {
     for (const id of ['first_blood', 'streaker', 'revenge', 'crown_ko', 'crown_steal', 'boss_slayer', 'core_hit', 'core_break',
         'bi_obsidian', 'bi_sandstone', 'bi_crystal', 'ore_vein', 'ore_shard', 'ore_emerald', 'chain_blast',
         'fat_stack', 'close_call', 'flash_vault', 'hoarder',
-        'stat_max', 'tank_t3', 'tank_t4', 'tank_t5', 'grow_2', 'grow_4',
+        'stat_max', 'grow_15', 'grow_2', 'grow_4',
         'ab_grapple', 'ab_pad', 'ab_all',
         'raid_survive', 'podium', 'champion', 'crown_win', 'chest_open']) assert.ok(got.has(id), id);
     // the victim was a player knocked out by a player: theirs is games only

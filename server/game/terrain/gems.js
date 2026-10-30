@@ -78,15 +78,7 @@ function stageGemMult() {
 }
 // One deposit's value on a break: the single place gem value is computed
 function depositValue(rock, d, breaker) {
-    let value = d && d.big && rock.ore === ORE.SHARD ? SHARD_BIG : DEPOSIT_VALUE[rock.ore];
-    // tougher rock pays more, by exactly how much tougher it is (biome x ore
-    value *= rockPay(rock);
-    try { value *= require('./raidMods.js').gemValueMult(rock.ore); } catch { /* */ }
-    value *= stageGemMult();
-    value = Math.max(1, Math.round(value));
-    // Rich Veins (raidPerks.js)
-    if (breaker && breaker._pkfx && breaker._pkfx.value > 1) value = Math.round(value * breaker._pkfx.value);
-    return value;
+    return d && d.big && rock.ore === ORE.SHARD ? SHARD_BIG : DEPOSIT_VALUE[rock.ore];
 }
 function depositsOf(rock) {
     return rock.deposits && rock.deposits.length ? rock.deposits : [{ wx: rock.wx, wy: rock.wy, wr: 9, big: false }];
@@ -99,14 +91,22 @@ function payoutOf(rock, breaker) {
 }
 
 // Mining chip event, sent to the shooter only on the FX channel
+const CHIP_ROCKS_PER_SEC = 3;
+function chipAllowed(owner, rock, t) {
+    const seen = owner._chipRocks || (owner._chipRocks = new Map());
+    for (const [k, at] of seen) if (t - at >= 1000) seen.delete(k);
+    if (seen.has(rock.k)) { seen.set(rock.k, t); return true; }
+    if (seen.size >= CHIP_ROCKS_PER_SEC) return false;
+    seen.set(rock.k, t);
+    return true;
+}
 function chipHit(rock, owner, dmg, x, y, wasGrowing) {
     if (!rock || !owner || !owner.socket || wasGrowing || rock.growing || owner.royaleLobby) return 0;
     const t = Date.now();
     let n = 0;
-    if (CHIPS && rock.ore && dmg > 0) {
+    if (CHIPS && rock.ore && dmg > 0 && chipAllowed(owner, rock, t)) {
         const max = rock.maxHealth || 1;
-        const chipMult = (owner._pkfx && owner._pkfx.chipper) || 1;
-        const budget = Math.floor(payoutOf(rock, owner) * CHIP_SHARE * chipMult);
+        const budget = Math.floor(payoutOf(rock, owner) * CHIP_SHARE);
         const paid = rock._chipPaid || 0;
         rock._chipAcc = Math.min(budget, (rock._chipAcc || 0) + budget * Math.min(1, dmg / max));
         n = Math.max(0, Math.floor(rock._chipAcc) - paid);
@@ -204,7 +204,6 @@ function spawnOreBurst(rock, breaker, scale = 1) {
     const deposits = depositsOf(rock);
     for (const d of deposits) {
         let value = depositValue(rock, d, breaker);
-        if (comboBonus > 0) value = Math.round(value * (1 + comboBonus));
         if (scale < 1) value = Math.max(1, Math.round(value * scale));
         if (owed > 0) { const take = Math.min(owed, value); value -= take; owed -= take; }
         if (value <= 0) continue;

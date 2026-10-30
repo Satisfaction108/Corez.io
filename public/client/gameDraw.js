@@ -542,14 +542,15 @@ var gameDraw = {
                 return gameDraw.mixColors(gameDraw.color.white, gameDraw.color.guiblack, 1 / 3);
         }
     },
-    tankPalette: Object.freeze(['#00b2e1', '#f14e54', '#00e16e', '#bf7ff5', '#ffe869', '#ff9a3d', '#2ee8c8',
-        '#ff63c3', '#768dfc', '#b2e84a', '#fc8f8a', '#5cd6ff', '#ffc7a6', '#f0f0f5']),
+    tankPalette: Object.freeze(['#3ca4cb', '#e03e41', '#8abc3f', '#8d6adf', '#efc74b', '#e7896d', '#7adbbc',
+        '#cc669c', '#b58efd', '#b9e87e', '#ef99c3', '#7ad3db', '#fdf380', '#e8ebf7']),
     TANK_PALETTE_BASE: 48,
-    TANK_GUN: '#999999',
+    TANK_GUN: '#a7a7af',
     TANK_SPIKE: '#555555',
-    TANK_EDGE_MIX: 0.25,
-    entityBorder: (size) => config.graphical.borderChunk * Math.min(1.5, Math.max(0.55, Math.pow(Math.max(0, size) / 24, 0.75))),
-    entityEdge: (givenColor) => gameDraw.mixColors(givenColor, '#000000', gameDraw.TANK_EDGE_MIX),
+    TANK_EDGE_MIX: 0.8,
+    TANK_EDGE_INK: '#484848',
+    entityBorder: (size) => config.graphical.borderChunk * 0.7 * Math.min(2, Math.max(1, Math.pow(Math.max(0, size) / 40, 0.75))),
+    entityEdge: (givenColor) => gameDraw.mixColors(givenColor, gameDraw.TANK_EDGE_INK, gameDraw.TANK_EDGE_MIX),
     entityRim: (givenColor) => (config.graphical.neon || config.graphical.darkBorders) ? gameDraw.getColorDark(givenColor) : gameDraw.entityEdge(givenColor),
     setEntityColor: (context, givenColor) => {
         if (config.graphical.neon || config.graphical.darkBorders) return gameDraw.setColor(context, givenColor);

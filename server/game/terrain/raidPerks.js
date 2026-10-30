@@ -26,31 +26,19 @@ const MAX_TIER = 4;
 // utility 3, survival 2, anything that adds damage to a fight 1).
 // icon: the client's glyph key (raidPerks.js GLYPH).
 const CATALOG = [
-    { id: 'drill',      name: 'Power Drill',     icon: 'drill',      max: MAX_TIER, w: 3, kind: 'mine',  desc: 'You mine 15% faster.' },
-    { id: 'blast',      name: 'Blast Rounds',    icon: 'blast',      max: MAX_TIER, w: 3, kind: 'mine',  desc: 'Shots that hit rock crack the rock around them.' },
-    { id: 'rich',       name: 'Rich Veins',      icon: 'rich',       max: MAX_TIER, w: 3, kind: 'mine',  desc: 'Ore you break drops 12% more gems.' },
-    { id: 'magnet',     name: 'Ore Magnet',      icon: 'magnet',     max: MAX_TIER, w: 3, kind: 'util',  desc: 'Gems fly to you from 40% farther away.' },
-    { id: 'quake',      name: 'Seismic Pulse',   icon: 'quake',      max: MAX_TIER, w: 3, kind: 'mine',  desc: 'Every few seconds a pulse cracks the rock around you.' },
-    { id: 'chain',      name: 'Chain Spark',     icon: 'chain',      max: MAX_TIER, w: 3, kind: 'mine',  desc: 'Hitting rock can send a spark into nearby rock.' },
-    { id: 'pierce',     name: 'Piercing Rounds', icon: 'pierce',     max: 2, w: 3, kind: 'mine',  desc: 'Shots punch through one more rock.' },
-    { id: 'crit',       name: 'Lucky Strike',    icon: 'crit',       max: MAX_TIER, w: 3, kind: 'mine',  desc: '12% of your shots hit rock for triple damage.' },
-    { id: 'grind',      name: 'Hull Grinder',    icon: 'grind',      max: MAX_TIER, w: 3, kind: 'mine',  desc: 'Ramming rock grinds it down 25% faster.' },
-    { id: 'prospector', name: 'Prospector',      icon: 'prospector', max: MAX_TIER, w: 3, kind: 'mine',  desc: 'Plain rocks you break have a higher chance to drop bonus copper.' },
-    { id: 'shatter',    name: 'Quake Shatter',   icon: 'shatter',    max: MAX_TIER, w: 3, kind: 'mine',  desc: 'Breaking a rock blasts neighboring rocks for 10% of their health.' },
-    { id: 'chipper',    name: 'Chip Collector',  icon: 'chipper',    max: MAX_TIER, w: 3, kind: 'mine',  desc: 'Chipping ore rocks pays out 25% more gems right into your satchel.' },
-    { id: 'satchel',    name: 'Deep Pockets',    icon: 'satchel',    max: MAX_TIER, w: 3, kind: 'util',  desc: 'Your satchel holds 4,000 more gems per stack.' },
-    { id: 'tractor',    name: 'Tractor Beam',    icon: 'tractor',    max: MAX_TIER, w: 3, kind: 'util',  desc: 'Gems pulled by your magnet fly into your tank 30% faster.' },
-    { id: 'stormward',  name: 'Storm Ward',      icon: 'stormward',  max: MAX_TIER, w: 2, kind: 'util',  desc: 'You take 15% less damage from the storm circle.' },
-    { id: 'speed',      name: 'Swift Treads',    icon: 'speed',      max: MAX_TIER, w: 3, kind: 'move',  desc: 'You move 6% faster.' },
-    { id: 'surge',      name: 'Gem Surge',       icon: 'surge',      max: MAX_TIER, w: 3, kind: 'move',  desc: 'Picking up a gem boosts your speed by 8% for 3 seconds.' },
-    { id: 'hide',       name: 'Thick Hide',      icon: 'hide',       max: MAX_TIER, w: 2, kind: 'tough', desc: 'You get 7% more max health.' },
-    { id: 'regen',      name: 'Field Repair',    icon: 'regen',      max: MAX_TIER, w: 2, kind: 'tough', desc: 'After 5 seconds out of a fight, you heal 1.2% of your health per second.' },
-    { id: 'aegis',      name: 'Aegis Shield',    icon: 'aegis',      max: MAX_TIER, w: 2, kind: 'tough', desc: 'Your shield holds 15% more and recovers faster.' },
-    // three barrels / six swarmers is the most their guns can take
-    { id: 'twin',       name: 'Twin Drill',      icon: 'twin',       max: 3, w: 1, kind: 'fight', desc: 'Your barrels fire an extra shot that only drills rock.' },
-    { id: 'drones',     name: 'Drone Bay',       icon: 'drones',     max: 3, w: 1, kind: 'fight', desc: 'Adds swarm drones that only chew rock.' },
-    { id: 'reload',     name: 'Overclock',       icon: 'reload',     max: MAX_TIER, w: 1, kind: 'fight', desc: 'You reload 5% faster.' },
-    { id: 'velocity',   name: 'High Velocity',   icon: 'velocity',   max: MAX_TIER, w: 1, kind: 'fight', desc: 'Your shots fly 6% faster and reach farther.' },
+    { id: 'drill',      name: 'Power Drill',     icon: 'drill',      max: MAX_TIER, w: 3, kind: 'mine',  desc: 'You mine 4% faster.' },
+    { id: 'grind',      name: 'Hull Grinder',    icon: 'grind',      max: MAX_TIER, w: 3, kind: 'mine',  desc: 'Ramming rock grinds it down 6% faster.' },
+    { id: 'magnet',     name: 'Ore Magnet',      icon: 'magnet',     max: MAX_TIER, w: 3, kind: 'util',  desc: 'Gems fly to you from 15% farther away.' },
+    { id: 'tractor',    name: 'Tractor Beam',    icon: 'tractor',    max: MAX_TIER, w: 3, kind: 'util',  desc: 'Gems pulled by your magnet fly into your tank 10% faster.' },
+    { id: 'satchel',    name: 'Deep Pockets',    icon: 'satchel',    max: MAX_TIER, w: 3, kind: 'util',  desc: 'Your satchel holds 1,000 more gems per stack.' },
+    { id: 'stormward',  name: 'Storm Ward',      icon: 'stormward',  max: MAX_TIER, w: 2, kind: 'util',  desc: 'You take 8% less damage from the storm circle.' },
+    { id: 'speed',      name: 'Swift Treads',    icon: 'speed',      max: MAX_TIER, w: 2, kind: 'move',  desc: 'You move 2% faster.' },
+    { id: 'surge',      name: 'Gem Surge',       icon: 'surge',      max: MAX_TIER, w: 2, kind: 'move',  desc: 'Picking up a gem boosts your speed by 3% for 3 seconds.' },
+    { id: 'hide',       name: 'Thick Hide',      icon: 'hide',       max: MAX_TIER, w: 2, kind: 'tough', desc: 'You get 2.5% more max health.' },
+    { id: 'regen',      name: 'Field Repair',    icon: 'regen',      max: MAX_TIER, w: 2, kind: 'tough', desc: 'After 5 seconds out of a fight, you heal 0.4% of your health per second.' },
+    { id: 'aegis',      name: 'Aegis Shield',    icon: 'aegis',      max: MAX_TIER, w: 2, kind: 'tough', desc: 'Your shield holds 5% more and recovers a little faster.' },
+    { id: 'reload',     name: 'Overclock',       icon: 'reload',     max: MAX_TIER, w: 1, kind: 'fight', desc: 'You reload 2% faster.' },
+    { id: 'velocity',   name: 'High Velocity',   icon: 'velocity',   max: MAX_TIER, w: 1, kind: 'fight', desc: 'Your shots fly 2% faster and reach a little farther.' },
 ];
 const BY_ID = new Map(CATALOG.map(p => [p.id, p]));
 
@@ -67,7 +55,7 @@ function nextAt(granted) { return pickAt((granted | 0) + 1); }
 // A build from anywhere (a save, an update, an older rule set) brought in line
 // with today's catalog: perks that are gone or past tier IV are cut. Total
 // picks are not capped any more, so old builds keep every valid stack.
-const RULES = 4;
+const RULES = 5;
 function sanitize(build) {
     if (!build || build.rules === RULES) return build;
     const perks = {};
@@ -96,13 +84,24 @@ function newBuild() {
     return { perks: {}, offer: null, pending: 0, granted: 0, base: 0, v: 0, rules: RULES };
 }
 
-const DEATH_LOSS = 0;
-function onDeath(build, score) {
+const DEATH_LOSS = 0.5;
+function onDeath(build, score, rng = Math.random) {
     if (!build) return [];
+    const lost = [];
+    let toLose = Math.floor(totalPicks(build) / 2);
+    while (toLose > 0) {
+        const held = Object.keys(build.perks).filter(id => (build.perks[id] | 0) > 0);
+        if (!held.length) break;
+        const id = held[Math.floor(rng() * held.length)];
+        build.perks[id]--;
+        if (build.perks[id] <= 0) delete build.perks[id];
+        lost.push(id);
+        toLose--;
+    }
     build.granted = 0;
     build.base = Math.max(0, +score || 0);
     build.v = (build.v | 0) + 1;
-    return [];
+    return lost;
 }
 
 // Three different perks that still have room, weighted toward mining and
@@ -227,33 +226,33 @@ function computeFx(perks) {
     let any = false;
     for (const p of CATALOG) if (n(p.id) > 0) { any = true; break; }
     if (!any) return null;
-    const mine = 1 + 0.15 * n('drill');
+    const mine = 1 + 0.04 * n('drill');
     return {
         mine,
-        budget: mine * (1 + 0.2 * n('twin') + 0.15 * n('drones')),
-        magnet: 1 + 0.4 * n('magnet'),
+        budget: mine,
+        magnet: 1 + 0.15 * n('magnet'),
         satchel: n('satchel'),
-        speed: 1 + 0.06 * n('speed'),
-        health: 1 + 0.07 * n('hide'),
-        reload: 1 + 0.05 * n('reload'),
-        value: 1 + 0.12 * n('rich'),
-        blastR: n('blast') ? 45 + 18 * n('blast') : 0,
-        chain: n('chain'),
-        pierce: n('pierce'),
-        crit: Math.min(0.6, 0.12 * n('crit')),
-        regen: 0.012 * n('regen'),
-        quake: n('quake'),
-        twin: n('twin'),
-        drones: n('drones'),
-        grind: 1 + 0.25 * n('grind'),
-        prospector: n('prospector'),
-        shatter: 0.1 * n('shatter'),
-        chipper: 1 + 0.25 * n('chipper'),
-        tractor: 1 + 0.3 * n('tractor'),
-        stormward: Math.max(0.2, 1 - 0.15 * n('stormward')),
-        surge: 0.08 * n('surge'),
-        aegis: 1 + 0.15 * n('aegis'),
-        velocity: 1 + 0.06 * n('velocity'),
+        speed: 1 + 0.02 * n('speed'),
+        health: 1 + 0.025 * n('hide'),
+        reload: 1 + 0.02 * n('reload'),
+        value: 1,
+        blastR: 0,
+        chain: 0,
+        pierce: 0,
+        crit: 0,
+        regen: 0.004 * n('regen'),
+        quake: 0,
+        twin: 0,
+        drones: 0,
+        grind: 1 + 0.06 * n('grind'),
+        prospector: 0,
+        shatter: 0,
+        chipper: 1,
+        tractor: 1 + 0.1 * n('tractor'),
+        stormward: Math.max(0.5, 1 - 0.08 * n('stormward')),
+        surge: 0.03 * n('surge'),
+        aegis: 1 + 0.05 * n('aegis'),
+        velocity: 1 + 0.02 * n('velocity'),
     };
 }
 

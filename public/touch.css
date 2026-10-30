@@ -14,6 +14,8 @@ body.mobile #touchChatBtn,
 body.mobile #touchRecBtn,
 body.mobile #touchAutoBtn,
 body.mobile #touchPingBtn,
+body.mobile #touchRepelBtn,
+body.mobile #touchOverBtn,
 body.mobile #ingameFullscreenBtn,
 body.mobile #ingameInviteBtn {
     top: max(8px, env(safe-area-inset-top));
@@ -22,17 +24,19 @@ body.mobile #ingameInviteBtn {
 }
 body.mobile #ingameSettingsBtn { left: max(8px, env(safe-area-inset-left)); }
 body.mobile #touchChatBtn { left: calc(max(8px, env(safe-area-inset-left)) + 52px); }
-body.mobile #touchRecBtn { left: calc(max(8px, env(safe-area-inset-left)) + 104px); }
-body.mobile #touchAutoBtn { left: calc(max(8px, env(safe-area-inset-left)) + 156px); width: 56px; }
-body.mobile #ingameFullscreenBtn { left: calc(max(8px, env(safe-area-inset-left)) + 220px) !important; }
+body.mobile #touchRecBtn { left: calc(max(8px, env(safe-area-inset-left)) + 384px); }
+body.mobile #touchAutoBtn { left: calc(max(8px, env(safe-area-inset-left)) + 104px); width: 56px; }
+body.mobile #touchRepelBtn { left: calc(max(8px, env(safe-area-inset-left)) + 168px); width: 62px; }
+body.mobile #touchOverBtn { left: calc(max(8px, env(safe-area-inset-left)) + 238px); width: 78px; }
+body.mobile #ingameFullscreenBtn { left: calc(max(8px, env(safe-area-inset-left)) + 324px) !important; }
 /* duos: Ping takes the fullscreen key's place, which moves one along */
-body.mobile #touchPingBtn { left: calc(max(8px, env(safe-area-inset-left)) + 220px); width: 56px; }
-body.mobile.duo-raid #ingameFullscreenBtn { left: calc(max(8px, env(safe-area-inset-left)) + 284px) !important; }
+body.mobile #touchPingBtn { left: calc(max(8px, env(safe-area-inset-left)) + 324px); width: 56px; }
+body.mobile.duo-raid #ingameFullscreenBtn { left: calc(max(8px, env(safe-area-inset-left)) + 388px) !important; }
 /* duos on a phone: Ping takes the row's last spot, fullscreen steps aside
    (Android goes fullscreen on Play anyway) */
 @media (max-width: 1000px) { body.mobile.duo-raid #ingameFullscreenBtn { display: none !important; } }
 
-#touchChatBtn, #touchRecBtn, #touchAutoBtn, #touchPingBtn {
+#touchChatBtn, #touchRecBtn, #touchAutoBtn, #touchPingBtn, #touchRepelBtn, #touchOverBtn {
     position: fixed;
     z-index: 30;
     margin: 0;
@@ -51,10 +55,11 @@ body.mobile.duo-raid #ingameFullscreenBtn { left: calc(max(8px, env(safe-area-in
     font: 700 12px/1 Rubik, Ubuntu, sans-serif;
 }
 #touchChatBtn .dw-ic { width: 22px; height: 22px; }
-#touchAutoBtn, #touchPingBtn { font: 400 16px/1 "Lilita One", Rubik, sans-serif; letter-spacing: .02em; color: #a597b0; }
+#touchAutoBtn, #touchPingBtn, #touchRepelBtn, #touchOverBtn { font: 400 16px/1 "Lilita One", Rubik, sans-serif; letter-spacing: .02em; color: #a597b0; }
+#touchOverBtn { font-size: 14px; }
 #touchPingBtn { color: #fff3d9; }
-#touchAutoBtn.on { background: #e07b2e; box-shadow: inset 0 -4px 0 #9e4a14, 0 3px 0 rgba(0,0,0,.3); color: #fff; text-shadow: 0 2px 0 rgba(0,0,0,.28); }
-#touchChatBtn:active, #touchRecBtn:active, #touchAutoBtn:active, #touchPingBtn:active { transform: translateY(3px); box-shadow: inset 0 -2px 0 #2e2837, 0 0 0 transparent; }
+#touchAutoBtn.on, #touchRepelBtn.on, #touchOverBtn.on { background: #e07b2e; box-shadow: inset 0 -4px 0 #9e4a14, 0 3px 0 rgba(0,0,0,.3); color: #fff; text-shadow: 0 2px 0 rgba(0,0,0,.28); }
+#touchChatBtn:active, #touchRecBtn:active, #touchAutoBtn:active, #touchPingBtn:active, #touchRepelBtn:active, #touchOverBtn:active { transform: translateY(3px); box-shadow: inset 0 -2px 0 #2e2837, 0 0 0 transparent; }
 
 /* record: a red dot; while recording it turns into a pill with the time */
 #touchRecBtn .rec-dot {

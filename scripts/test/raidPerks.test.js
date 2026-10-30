@@ -229,7 +229,7 @@ test('offers: mining and utility come up more than damage', () => {
     const kindOf = id => perks.BY_ID.get(id).kind;
     const avg = (k) => { const ids = perks.CATALOG.filter(p => p.kind === k).map(p => p.id); return ids.reduce((a, id) => a + (count[id] | 0), 0) / ids.length; };
     assert.ok(avg('mine') > avg('fight') * 1.8, 'mine ' + avg('mine') + ' vs fight ' + avg('fight'));
-    assert.ok(kindOf('twin') === 'fight' && kindOf('reload') === 'fight' && kindOf('drones') === 'fight');
+    assert.ok(kindOf('reload') === 'fight' && kindOf('velocity') === 'fight');
 });
 
 test('offers: a perk you hold below its max comes up as an upgrade on every offer, next to something new', () => {
@@ -294,47 +294,25 @@ test('queue: milestones reached together wait behind the open offer', () => {
     assert.equal(perks.totalPicks(b), 3);
 });
 
-test('balance: damage perks stay small, every max is sane', () => {
-    const fx = perks.computeFx({ reload: 3, twin: 2, drones: 2, hide: 3, speed: 3, crit: 3, rich: 3, drill: 3 });
-    assert.ok(fx.reload <= 1.15 + 1e-9, 'reload ' + fx.reload);
-    assert.ok(fx.health <= 1.21 + 1e-9, 'health ' + fx.health);
-    assert.ok(fx.speed <= 1.18 + 1e-9, 'speed ' + fx.speed);
-    assert.ok(fx.value <= 1.36 + 1e-9, 'ore value ' + fx.value);
+test('balance: no perk gives a real edge; rock breakers and gem bonuses are gone', () => {
+    const maxed = Object.fromEntries(perks.CATALOG.map(p => [p.id, p.max]));
+    const fx = perks.computeFx(maxed);
+    assert.ok(fx.reload <= 1.08 + 1e-9, 'reload ' + fx.reload);
+    assert.ok(fx.health <= 1.1 + 1e-9, 'health ' + fx.health);
+    assert.ok(fx.speed <= 1.08 + 1e-9, 'speed ' + fx.speed);
+    assert.ok(fx.mine <= 1.16 + 1e-9, 'mine ' + fx.mine);
+    assert.ok(fx.velocity <= 1.08 + 1e-9, 'velocity ' + fx.velocity);
+    assert.equal(fx.value, 1, 'gems always pay the same');
+    assert.equal(fx.chipper, 1);
+    for (const k of ['blastR', 'chain', 'pierce', 'crit', 'quake', 'shatter', 'twin', 'drones', 'prospector']) assert.equal(fx[k], 0, k);
     assert.equal(perks.computeFx({}), null, 'an empty build costs the hooks nothing');
-    const defs = perks.gunDefs(fx);
-    const twin = defs.filter(d => d.PROPERTIES.LABEL === 'Twin Drill');
-    assert.equal(twin.length, 2);
-    // round 10: the Twin Drill barrel shows, Drone Bay's stay hidden; both
-    // only drill rock, twin shots are a Basic bullet at 0 score
-    for (const d of twin) { assert.equal(d.PROPERTIES.HIDDEN, true, 'no extra barrel drawn'); assert.ok(!d.PROPERTIES.FIXED_BULLET_SIZE); }
-    const real = { canShoot: true, bulletType: { TYPE: 'bullet' }, settings: { reload: 12, size: 1.3, speed: 4.4, maxSpeed: 4.4, range: 1.1 }, length: 1.9, width: 0.85, aspect: 1, offset: 0.5, direction: Math.PI / 2, angle: 0.2 };
-    const twinOn = perks.gunDefs(fx, { guns: new Map([[1, real]]) }).filter(d => d.PROPERTIES.LABEL === 'Twin Drill');
-    for (const d of twinOn) {
-        const [len, wid, asp, x, y, ang] = d.POSITION;
-        assert.ok(Math.abs(len - 19) < 1e-9 && Math.abs(wid - 8.5) < 1e-9 && asp === 1, 'out of the real barrel');
-        assert.ok(Math.abs(x) < 1e-9 && Math.abs(y - 5) < 1e-9 && Math.abs(Math.abs(ang - 0.2 * 180 / Math.PI) - 5) < 1e-9, 'with a small angle off it');
-        const st = d.PROPERTIES.SHOOT_SETTINGS;
-        assert.ok(st.size === 1.3 && st.speed === 4.4 && st.maxSpeed === 4.4 && st.range === 1.1 && st.recoil === 0, 'the same bullet as the real barrel');
-    }
-    const bay = defs.filter(d => d.PROPERTIES.LABEL === 'Drone Bay');
-    assert.equal(bay.length, 4);
-    for (const d of bay) { assert.equal(d.PROPERTIES.HIDDEN, true); assert.ok(d.PROPERTIES.MAX_CHILDREN >= 4, 'a bigger swarm, not stronger drones'); }
-    for (const d of defs) assert.equal(d.PROPERTIES.ROCK_ONLY, true, 'perk shots only drill rock');
-    assert.ok(/only drills rock/.test(perks.BY_ID.get('twin').desc) && /only chew rock/.test(perks.BY_ID.get('drones').desc));
-    const idx = fs.readFileSync(path.join(__dirname, '..', '..', 'server', 'game', 'index.js'), 'utf8');
-    assert.ok(/instance\.rockOnly && other\.type !== "wall"/.test(idx), 'collide lets rock-only shots pass entities');
-    for (const d of defs) assert.ok(!d.PROPERTIES.AUTOFIRE, 'perk barrels fire with you, never on their own');
-    assert.ok(perks.PIERCE_TANK_DAMAGE < 1, 'a shot through rock hits a tank softer');
+    assert.equal(perks.gunDefs(fx).length, 0, 'no hidden perk barrels');
+    for (const gone of ['blast', 'quake', 'chain', 'pierce', 'shatter', 'crit', 'twin', 'drones', 'rich', 'prospector', 'chipper']) assert.ok(!perks.BY_ID.has(gone), gone + ' removed');
     for (const p of perks.CATALOG) assert.ok(p.max >= 2 && p.max <= perks.MAX_TIER, p.id);
-    assert.equal(perks.BY_ID.get('twin').max, 3, 'the extra barrels stop at three');
-    assert.equal(perks.BY_ID.get('drones').max, 3, 'the swarm stops at six');
-    assert.equal(perks.BY_ID.get('drill').max, perks.MAX_TIER);
-    assert.equal(perks.computeFx({ satchel: 1 }).satchel, 1);
     assert.equal(perks.computeFx({ satchel: 3 }).satchel, 3);
-    assert.equal(perks.CATALOG.length, 24);
+    assert.equal(perks.CATALOG.length, 13);
 });
 
-// ── in a raid ───────────────────────────────────────────────────────────
 test('raid: stat caps stay at the tank\'s full 9 (no raid-wide cut)', () => {
     const s = mkSocket();
     const p = body(s);
@@ -354,61 +332,61 @@ test('raid: the offer reaches the client, bogus picks are refused, a pick lands 
     assert.ok(s.packets.length > n0 && lastPK(s).o.length === 3, 'refused, and the real offer is sent again');
     // pin the offer so the effect is known
     const b = royale._perkBuild(p);
-    b.offer = ['hide', 'speed', 'twin'];
+    b.offer = ['hide', 'speed', 'grind'];
     const hp0 = p.health.max, sp0 = p.topSpeed;
     assert.equal(royale.pickPerk(s, 'drill'), false, 'not on this offer');
     assert.equal(royale.pickPerk(s, 'hide'), true);
-    assert.ok(Math.abs(p.health.max / hp0 - 1.07) < 0.01, 'Thick Hide: ' + p.health.max + ' vs ' + hp0);
+    assert.ok(Math.abs(p.health.max / hp0 - 1.025) < 0.01, 'Thick Hide: ' + p.health.max + ' vs ' + hp0);
     assert.equal(p.topSpeed, sp0);
     assert.deepEqual(lastPK(s).b.map(x => x.id + x.n), ['hide1']);
     assert.equal(lastPK(s).o.length, 0, 'offer closed');
 });
 
-test('raid: a death halves the board score, keeps every perk and the open offer, and the milestones start over', () => {
+test('raid: a death keeps a quarter of the board score, half the perks and the open offer, and the milestones start over', () => {
     const s = mkSocket();
     const p = body(s);
     setScore(p, 15000);
     perkTick();
     const b = royale._perkBuild(p);
-    b.offer = ['twin', 'speed', 'hide'];
-    assert.equal(royale.pickPerk(s, 'twin'), true);
-    b.offer = ['speed', 'hide', 'rich'];
+    b.offer = ['speed', 'hide', 'grind'];
     assert.equal(royale.pickPerk(s, 'speed'), true);
-    b.offer = ['speed', 'hide', 'rich'];
+    b.offer = ['speed', 'hide', 'grind'];
     assert.equal(royale.pickPerk(s, 'speed'), true);
+    b.offer = ['speed', 'hide', 'grind'];
+    assert.equal(royale.pickPerk(s, 'hide'), true);
     setScore(p, 20000); perkTick();
-    b.offer = ['hide', 'rich', 'drill'];
+    b.offer = ['hide', 'grind', 'drill'];
     assert.equal(royale.pickPerk(s, 'hide'), true);
     assert.equal(b.offer, null);
     setScore(p, 25000); perkTick();
     assert.ok(b.offer, 'an offer open at death');
     p.kill(); royale.onCombatantDead(p); loop(2);
     s.lastRaidDeathAt = Date.now();
-    assert.equal(royale.boardSnapshot().find(r => r.name === p.name).score, 12500, 'half the board score');
-    assert.deepEqual(b.perks, { twin: 1, speed: 2, hide: 1 }, 'every perk is kept: ' + JSON.stringify(b.perks));
+    assert.equal(royale.boardSnapshot().find(r => r.name === p.name).score, 6250, 'a quarter of the board score');
+    assert.equal(perks.totalPicks(b), 2, 'half the perks are lost: ' + JSON.stringify(b.perks));
     assert.ok(b.offer && b.offer.length === 3, 'the open offer is kept');
     assert.equal(b.granted, 0);
     const q = body(s, 500, 0);
     perkTick();
     assert.equal(royale.pickPerk(s, b.offer[0]), true, 'and can still be picked');
-    assert.equal(lastPK(s).next, 17500, 'the next pick is 5,000 past the new score');
-    setScore(q, 17499); perkTick();
+    assert.equal(lastPK(s).next, 11250, 'the next pick is 5,000 past the new score');
+    setScore(q, 11249); perkTick();
     assert.equal(b.offer, null);
-    setScore(q, 17500); perkTick();
-    assert.ok(b.offer && b.offer.length === 3, 'offered at 17,500');
-    assert.equal(lastPK(s).next, 22500, 'then 5,000 more');
+    setScore(q, 11250); perkTick();
+    assert.ok(b.offer && b.offer.length === 3, 'offered at 11,250');
+    assert.equal(lastPK(s).next, 16250, 'then 5,000 more');
 });
 
 test('death: perks pure rules', () => {
     const b = perks.newBuild();
     b.perks = { drill: 3, hide: 1, speed: 2 };
-    b.offer = ['rich', 'twin', 'crit'];
+    b.offer = ['grind', 'magnet', 'reload'];
     b.pending = 2;
     b.granted = 6;
-    const lost = perks.onDeath(b, 12000);
-    assert.equal(lost.length, 0);
-    assert.deepEqual(b.perks, { drill: 3, hide: 1, speed: 2 }, 'nothing is lost');
-    assert.deepEqual(b.offer, ['rich', 'twin', 'crit'], 'the open offer stays');
+    const lost = perks.onDeath(b, 12000, rng(3));
+    assert.equal(lost.length, 3, 'half of 6 picks');
+    assert.equal(perks.totalPicks(b), 3);
+    assert.deepEqual(b.offer, ['grind', 'magnet', 'reload'], 'the open offer stays');
     assert.equal(b.pending, 2);
     assert.equal(b.granted, 0);
     assert.equal(b.base, 12000);
@@ -417,58 +395,43 @@ test('death: perks pure rules', () => {
     assert.equal(perks.snapshot(b).next, 22000);
     const one = perks.newBuild();
     one.perks = { drill: perks.MAX_TIER };
-    assert.deepEqual(perks.onDeath(one, 0), []);
-    assert.deepEqual(one.perks, { drill: perks.MAX_TIER });
+    assert.equal(perks.onDeath(one, 0, rng(1)).length, 2);
+    assert.deepEqual(one.perks, { drill: 2 });
+    const single = perks.newBuild();
+    single.perks = { hide: 1 };
+    assert.deepEqual(perks.onDeath(single, 0, rng(1)), [], 'one pick: half rounds down');
     assert.deepEqual(perks.onDeath(perks.newBuild(), 0), []);
 });
 
-test('raid: the build survives evolution and the barrel looks right', () => {
+test('raid: the build survives evolution with no extra barrels', () => {
     const s = mkSocket();
     const p = body(s);
     setScore(p, 20000);
     perkTick();
     const b = royale._perkBuild(p);
-    b.offer = ['twin', 'speed', 'hide'];
-    assert.equal(royale.pickPerk(s, 'twin'), true);
+    b.offer = ['speed', 'hide', 'grind'];
+    assert.equal(royale.pickPerk(s, 'speed'), true);
     assert.ok(b.offer && b.offer.length === 3, 'the second milestone opened right after');
-    assert.equal(perkGuns(p).length, 1, 'Twin Drill barrel on');
-    {
-        const tg = perkGuns(p)[0];
-        assert.equal(tg.rockOnly, true);
-        assert.ok(tg.hidden && tg.alpha === 0, 'no extra barrel drawn');
-        const real = [...p.guns.values()].find(g => !g.isRaidPerk && g.canShoot);
-        const shot = (g) => g.shotBodySize() * g.width * g.settings.size / 2;
-        assert.ok(Math.abs(shot(tg) - shot(real)) < 1e-9, 'the same size as the tank\'s own bullet: ' + shot(tg) + ' vs ' + shot(real));
-        const g0 = p.growthMult; p.growthMult = 2;
-        assert.ok(Math.abs(shot(tg) - shot(real)) < 1e-9, 'and still after raid growth');
-        p.growthMult = g0;
-    }
+    assert.equal(perkGuns(p).length, 0, 'perks add no barrels');
 });
 
 test('raid: effects come back after an evolution', async () => {
     const s = mkSocket();
     const p = body(s);
-    setScore(p, 10000);
+    setScore(p, 15000);
     perkTick();
     const b = royale._perkBuild(p);
-    b.offer = ['twin', 'drones', 'speed'];
-    royale.pickPerk(s, 'twin');
-    b.offer = ['drones', 'speed', 'hide'];
-    royale.pickPerk(s, 'drones');
-    assert.equal(perkGuns(p).length, 3, 'one twin barrel and two drone barrels');
     const sp = p.topSpeed;
-    b.offer = ['speed', 'hide', 'rich'];
-    setScore(p, 15000); perkTick();
-    b.offer = ['speed', 'hide', 'rich'];
+    b.offer = ['speed', 'hide', 'grind'];
     royale.pickPerk(s, 'speed');
     assert.ok(p.topSpeed > sp, 'Swift Treads');
     p.upgrades = [];
     p.define('twin');
     p.refreshBodyAttributes();
     await new Promise(r => setImmediate(r));
-    assert.equal(perkGuns(p).length, 3, 'the hidden barrels are back on the new class');
+    assert.equal(perkGuns(p).length, 0);
     shop.applyPassives(p);
-    assert.ok(p.bonusSpeedMult > 1.05, 'speed still applied after the evolution');
+    assert.ok(p.bonusSpeedMult > 1.01, 'speed still applied after the evolution');
 });
 
 test('raid: a pick puts nothing on the board or the rank basis', () => {

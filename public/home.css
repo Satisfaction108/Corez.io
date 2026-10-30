@@ -5800,7 +5800,7 @@ html[data-theme] #dwJoin.open:not(.see) { animation: dwFade 180ms ease both, hbP
     background: radial-gradient(ellipse min(440px, 47vw) min(480px, 58vh) at 50% 52%, rgba(var(--home-floor-rgb), .93) 0, rgba(var(--home-floor-rgb), .86) 52%, rgba(var(--home-floor-rgb), 0) 100%);
 }
 
-html.dw-fresh :is(#menuNav, #accountChip, #inviteBtn, #homeSidebar, #themeToggleBtn, #homeLeft, #lobbySide, #lvRow, .startButtonHolder, #aoChampions) { display: none !important; }
+html.dw-fresh :is(#menuNav, #accountChip, #inviteBtn, #homeSidebar, #themeToggleBtn, #homeLeft, #homeRight, #lobbySide, #lvRow, .startButtonHolder, #aoChampions) { display: none !important; }
 
 html[data-theme] body:not(.mobile) .mainWrapper {
     box-sizing: border-box;
@@ -6677,3 +6677,41 @@ html[data-theme="dark"] #homeDailyAndRecords .hdr-pb-val { color: #ffd45e; }
     }
 }
 
+
+.home-right { right: auto; left: calc(100% + 16px); }
+html[data-theme] #startMenuWrapper .home-right,
+html[data-theme] #startMenuWrapper .home-right:hover { right: auto; left: calc(100% + 24px); }
+@media (max-width: 1040px) {
+    .home-right, html[data-theme] #startMenuWrapper .home-right { left: auto; }
+}
+body.mobile .home-right, html[data-theme] body.mobile #startMenuWrapper .home-right { left: auto; }
+html[data-theme] #startMenuWrapper .home-left > :is(#homeDailyAndRecords, #aoChampions) { margin: 0; }
+#aoChampions[hidden] { display: none !important; }
+html[data-theme] #startMenuWrapper #aoChampions:not(:empty) {
+    padding: 12px 14px;
+    border: 1px solid var(--home-card-edge);
+    border-radius: 10px;
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--home-ink);
+    text-align: left;
+}
+.ao-champs .ao-line { display: flex; justify-content: space-between; gap: 8px; }
+.ao-champs .ao-line b { color: var(--home-ink); font-weight: 800; }
+.ao-champs .ao-line span { color: var(--home-ink2); }
+.ao-champs .ao-head { margin: 8px 0 6px; text-align: center; font-weight: 800; color: var(--home-ink); }
+.ao-champs .ao-line + .ao-head { margin-top: 10px; }
+.ao-champs .ao-head:first-child { margin-top: 0; }
+.ao-champs .ao-podium { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; text-align: center; }
+.ao-champs .ao-place { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
+.ao-champs .ao-medal {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 30px; height: 30px; border-radius: 50%;
+    font-size: 12px; font-weight: 900; color: #3b2a00;
+    border: 3px solid rgba(0, 0, 0, 0.28);
+    box-sizing: border-box;
+}
+.ao-champs .ao-medal.p1 { background: #f5c542; }
+.ao-champs .ao-medal.p2 { background: #c9ced6; color: #2d3138; }
+.ao-champs .ao-medal.p3 { background: #d9894a; color: #3a1d06; }
+.ao-champs .ao-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 700; color: var(--home-ink); }

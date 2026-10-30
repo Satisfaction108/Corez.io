@@ -312,7 +312,7 @@
         <button class="social-btn dw-fs-toggle" id="homeFullscreenBtn" title="Fullscreen" aria-label="Fullscreen" hidden><svg class="dw-ic fs-on"><use href="#i-fs"/></svg><svg class="dw-ic fs-off"><use href="#i-fs-exit"/></svg></button>
         <div class="social-buttons">
             <a href="https://discord.gg/bx5FK3CMwp" target="_blank" rel="noopener"><button class="social-btn" title="Join our Discord" aria-label="Join our Discord"><svg class="dw-ic dc"><use href="#i-discord"/></svg></button></a>
-            <button class="social-btn" id="ytSoon" title="No YouTube channel yet" aria-label="No YouTube channel yet"><svg class="dw-ic"><use href="#i-yt"/></svg></button>
+            <a href="https://www.youtube.com/@CorezIoOfficial" target="_blank" rel="noopener"><button class="social-btn" title="Our YouTube channel" aria-label="Our YouTube channel"><svg class="dw-ic"><use href="#i-yt"/></svg></button></a>
         </div>
     </div>
 
@@ -596,15 +596,11 @@
             <div class="home-row">
             <div class="startMenu">
 
-                <!-- Daily Quests beside the card (client/account/dailyQuests.js) -->
-                <aside id="lobbySide" aria-label="Daily quests" hidden></aside>
-
                 <div class="startMenuHolder mainHolder">
                     <div class="sliderHolder">
                         <div class="slider startMenuSlidingContent">
 
                             <h1 class="game-title"><img class="game-logo" src="/img/logo.svg" alt="" width="100" height="100"><span class="wordmark" data-text="Corez.io">Corez<i>.io</i></span></h1>
-                            <p class="hero-tag">Mine for gems, bank them, and <b>win the game!</b></p>
 
                             <!-- name (left) + region dropdown (right) -->
                             <div class="menu-row name-row">
@@ -656,9 +652,6 @@
                                 </button>
                             </div>
 
-                            <!-- Daily Featured Tanks (+25% pts) & Personal Best Runs by Tank -->
-                            <div id="homeDailyAndRecords" class="dw-home-daily-records" aria-label="Daily Featured Tanks and Personal Best Runs"></div>
-
                             <!-- credits, sleek -->
                             <div class="menu-credits">
                                 <span class="dev-by">Developed by <b>ZyroX</b></span>
@@ -709,11 +702,13 @@
                  narrow screens): the next Raid Night and the daily rewards. Both are
                  filled by the account bundle once it loads (never blocks Play); the
                  card stays hidden while both are. -->
-            <aside id="homeLeft" class="home-left" aria-label="Raid Night and daily rewards">
-                <!-- the next Raid Night (client/account/eventCard.js, schedule in shared/events.js) -->
+            <aside id="homeLeft" class="home-left" aria-label="Raid Night and today's standings">
                 <div id="eventCard" class="ev-card" hidden></div>
-                <!-- the daily rewards track, tomorrow's reward and the reasons to come back (client/account/retention.js) -->
+                <div id="aoChampions" class="ao-champs" hidden></div>
+            </aside>
+            <aside id="homeRight" class="home-left home-right" aria-label="Daily rewards and featured tanks">
                 <div id="dailyStrip" class="dy-strip" hidden></div>
+                <div id="homeDailyAndRecords" class="dw-home-daily-records" aria-label="Today's featured tanks"></div>
             </aside>
             </div>
         </div>

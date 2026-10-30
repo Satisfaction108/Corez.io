@@ -7,6 +7,7 @@ module.exports = {
     enable_food: false,
     // ROYALE_ARMS_RACE=1: the Arms Race tank tree (entityAddons/armsRace)
     arms_race: process.env.ROYALE_ARMS_RACE === '1',
+    armsrace_merge: process.env.ROYALE_ARMS_RACE_MERGE !== '0',
     dig_wars: false,
     dig_royale: true,
     war_enabled: false,
@@ -34,7 +35,8 @@ module.exports = {
         room_width: 20,
         room_height: 20,
         open_layout: {
-            open_target: 0.34,
+            open_target: 0.7,
+            team_open_target: 0.56,
             center_plaza: 210,
             vault_plaza: 560,
             shop_plaza: 380,
@@ -44,7 +46,9 @@ module.exports = {
             extra_links: 2,
             center_links: 2,
             cave_cells: 10,
-            rim_wall: 400,
+            rim_wall: 0,
+            rim_pull: -0.4,
+            nest_keep: 1,
             pillars_per_vault: 0,
             min_island_cells: 4,
             min_pocket_cells: 12,

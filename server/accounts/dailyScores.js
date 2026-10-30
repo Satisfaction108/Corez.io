@@ -90,10 +90,26 @@ function loadWorld(day, world, limit = 60) {
     return d.all('SELECT * FROM ao_daily_scores WHERE day = ? AND world = ? ORDER BY score DESC LIMIT ?', String(day), String(world || ''), Math.max(1, limit | 0)).map(parse);
 }
 
+function botScores(day) {
+    const d = h();
+    if (!d) return [];
+    const out = [];
+    for (const r of d.all('SELECT fam, name, data, updated_at FROM ao_daily_bots WHERE day = ?', String(day))) {
+        let data = {};
+        try { data = JSON.parse(r.data || '{}') || {}; } catch (e) { data = {}; }
+        const score = Math.max(0, data.score | 0);
+        if (score > 0) out.push({ who: 'b:' + r.fam, name: r.name || 'A bot', score, updatedAt: r.updated_at || 0, bot: true });
+    }
+    return out;
+}
+
 function top(day, n = 10) {
     const d = h();
     if (!d) return [];
-    return d.all('SELECT * FROM ao_daily_scores WHERE day = ? AND score > 0 ORDER BY score DESC, updated_at ASC LIMIT ?', String(day), Math.max(1, n | 0)).map(parse);
+    const people = d.all('SELECT * FROM ao_daily_scores WHERE day = ? AND score > 0 ORDER BY score DESC, updated_at ASC LIMIT ?', String(day), Math.max(1, n | 0)).map(parse);
+    return people.concat(botScores(day))
+        .sort((a, b) => (b.score - a.score) || ((a.updatedAt || 0) - (b.updatedAt || 0)))
+        .slice(0, Math.max(1, n | 0));
 }
 
 function champs(day) {
@@ -225,7 +241,9 @@ function placeOf(day, who) {
     if (!me || !(me.score > 0)) return null;
     const above = d.get('SELECT COUNT(*) AS n FROM ao_daily_scores WHERE day = ? AND score > ?', String(day), me.score | 0);
     const all = d.get('SELECT COUNT(*) AS n FROM ao_daily_scores WHERE day = ? AND score > 0', String(day));
-    return { place: ((above && above.n) | 0) + 1, of: (all && all.n) | 0, score: me.score | 0 };
+    const bots = botScores(day);
+    const botsAbove = bots.filter(b => b.score > (me.score | 0)).length;
+    return { place: ((above && above.n) | 0) + botsAbove + 1, of: ((all && all.n) | 0) + bots.length, score: me.score | 0 };
 }
 
 function dailyPlacement(day, now = Date.now(), minMs = 5 * 60 * 1000) {
@@ -249,4 +267,4 @@ function dailyPlacement(day, now = Date.now(), minMs = 5 * 60 * 1000) {
     return out;
 }
 
-module.exports = { CHAMP_DUST_MILLI, available, validWho, placeOf, save, saveBots, loadBots, dropBots, pruneBots, loadOne, loadWorld, top, champs, settleDay, owedFor, adoptGuest, dailyPlacement, _ensure: ensure };
+module.exports = { CHAMP_DUST_MILLI, available, validWho, placeOf, botScores, save, saveBots, loadBots, dropBots, pruneBots, loadOne, loadWorld, top, champs, settleDay, owedFor, adoptGuest, dailyPlacement, _ensure: ensure };

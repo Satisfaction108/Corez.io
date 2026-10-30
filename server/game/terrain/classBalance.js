@@ -40,7 +40,13 @@ function helperShot(e) { return !!helperKind(e); }
 
 // The expanded tree (entityAddons/tanksExpansion.js)
 let derived = null;
+let budgetOn = null;
 function multOf(label) {
+    if (budgetOn === null) {
+        budgetOn = false;
+        if (typeof Config === 'undefined' || Config.power_budget !== false) { try { require('../../lib/definitions/power_budget_data.js'); budgetOn = true; } catch { budgetOn = false; } }
+    }
+    if (budgetOn) return undefined;
     if (VS_TANKS[label] != null) return VS_TANKS[label];
     if (!derived) {
         derived = {};

@@ -11,7 +11,7 @@ const SCALE = 1500;          // 1.45x at ~3.7k score, smooth tail to 1.85x
 // tanks around to chase. Growth only: the board keeps the real score.
 const BOT_SCORE_MULT = 2;
 // the "you grew" card fires when a life crosses one of these
-const STAGES = [1.15, 1.3, 1.45, 1.6, 1.75];
+const STAGES = [1.15, 1.3, 1.45, 1.6, 1.75, 2, 3, 4];
 const REFRESH_STEP = 0.03;   // stats are recomputed every time size moves this much
 const EASE_MS = 900;
 
@@ -23,13 +23,12 @@ function enabled() {
 // with the same slope at the join so tanks stay agile in rock corridors.
 const MAX_GROWTH = 1.85;
 const TEAM_MAX_GROWTH = 5;
-const TEAM_GROW_RATE = 1.7;
+const TEAM_GROW_RATE = 0.85;
 const KNEE_GROWTH = 1.45;
 const TAIL_AT = SCALE * (Math.exp((KNEE_GROWTH - 1) / GAIN) - 1);
 const tailTau = max => (max - KNEE_GROWTH) * (SCALE + TAIL_AT) / GAIN;
-function teamGrowth() { return !!Config.royale_teams; }
-function maxGrowth() { return teamGrowth() ? TEAM_MAX_GROWTH : MAX_GROWTH; }
-function growRate() { return teamGrowth() ? TEAM_GROW_RATE : 1; }
+function maxGrowth() { return TEAM_MAX_GROWTH; }
+function growRate() { return TEAM_GROW_RATE; }
 function multFor(score) {
     const s = Math.max(0, score || 0);
     if (s <= TAIL_AT) return 1 + GAIN * Math.log(1 + s / SCALE);
@@ -64,9 +63,10 @@ const STAT_K = (STAT_AT_100K - 1) / Math.log(4.4716);
 function statMult(g) { return 1 + STAT_K * Math.log(Math.max(1, g)); }
 // Health and damage scale noticeably but fairly (+24% HP and +10% Damage at 1.85x ceiling)
 // so growing feels rewarding without making big players unkillable.
-const HEALTH_PER_X = 0.28;
+const HEALTH_PER_X = 0.45;
 function healthMult(g) { return 1 + HEALTH_PER_X * (Math.min(maxGrowth(), Math.max(1, g)) - 1); }
-const DAMAGE_PER_X = 0.12;
+const DAMAGE_PER_X = 0.2;
+const SMASHER_HEALTH_SHARE = 0.5;
 function damageMult(g) { return 1 + DAMAGE_PER_X * (Math.min(maxGrowth(), Math.max(1, g)) - 1); }
 function bodyDamageMult(g) { return damageMult(g); }
 const VIEW_POW = 0.8;
@@ -83,7 +83,7 @@ function applyPerks(body) {
     const sp = speedMult(g);
     body.topSpeed *= sp;
     body.acceleration *= sp;
-    body.health.set(body.health.max * healthMult(g));
+    body.health.set(body.health.max * (body.settings && body.settings.reloadToAcceleration ? 1 + (healthMult(g) - 1) * SMASHER_HEALTH_SHARE : healthMult(g)));
     body.damage *= damageMult(g);
 }
 
@@ -105,7 +105,7 @@ function resizeKids(body) {
             : gun.children || [];
         for (const kid of kids) {
             if (!kid || kid.isGhost || !(kid._growG > 0) || kid._growG === g || (kid.isDead && kid.isDead())) continue;
-            const f = Math.pow(g / kid._growG, 0.8);
+            const f = Math.pow(g / kid._growG, gun.calculator === 'drone' ? 1 : 0.8);
             kid.SIZE *= f;
             if (kid.coreSize) kid.coreSize *= f;
             kid._growG = g;

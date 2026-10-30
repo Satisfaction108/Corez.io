@@ -1087,7 +1087,7 @@ const CHAPTERS = [
                 id: "events", next: true,
                 title: "Events",
                 text: () => aoT()
-                    ? "Every 6 to 8 minutes an *event* starts somewhere on the map: *Storm Circle*, *Core Siege*, *Boss Hunt*, *Gem Rush*, *King of the Vault* or *Meteor Shower*. Check your map when one is coming."
+                    ? "Every 6 to 8 minutes an *event* starts somewhere on the map: *Storm Circle*, *Core Siege*, *Boss Hunt* or *Gem Rush*. Check your map when one is coming."
                     : "Each storm can bring an *ore bloom*, a *meteor shower* or *gem rain*, so check your map. There's also a *twist*, like double damage.",
                 praise: "OK",
             },
@@ -1123,7 +1123,7 @@ const CHAPTERS = [
                 id: "raidClock", next: true,
                 title: () => aoT() ? "Events" : "Raids",
                 text: () => aoT()
-                    ? "Every 6 to 8 minutes an *event* starts, like a *Gem Rush* or *King of the Vault*. The *top 3* of each one get bonus points and a *crown*."
+                    ? "Every 6 to 8 minutes an *event* starts, like a *Gem Rush* or *Boss Hunt*. The *top 3* of each one get bonus points and a *crown*."
                     : "A raid is *3 storms* over 21 minutes. The *3rd storm* closes all the way and ends it.",
                 praise: "OK",
             },

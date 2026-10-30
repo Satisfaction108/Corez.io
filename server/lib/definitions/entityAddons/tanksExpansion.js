@@ -3,6 +3,9 @@
 if ((process.env.ROYALE_TANKS || 'expanded') === 'classic' || Config.arms_race || Config.tutorial) return;
 
 const D = require('../tanks_expansion_data.js');
+const INVENTED = Config.invented_tanks === true;
+const TANKS = INVENTED ? D.tanks : [];
+const BALANCE = INVENTED ? D.balance : {};
 const arr = x => x == null ? [] : Array.isArray(x) ? x : [x];
 const copy = x => JSON.parse(JSON.stringify(x));
 const resolve = t => typeof t === 'string' ? Class[t] : Array.isArray(t) ? resolve(t[0]) : (t && typeof t === 'object' ? t : null);
@@ -21,15 +24,18 @@ function body(def, n = 0) {
 }
 
 // 1. the new tanks
-for (const t of D.tanks) Class[t.key] = copy(t.def);
+for (const t of TANKS) Class[t.key] = copy(t.def);
 
 const gunAngle = g => { const p = g && g.POSITION; if (!p) return 0; const a = Array.isArray(p) ? p[5] : p.ANGLE; return ((((+a || 0) % 360) + 540) % 360) - 180; };
 const rearGun = g => Math.abs(gunAngle(g)) >= 120;
 const isBird = def => arr(get(def, 'GUNS')).some(g => g.PROPERTIES && g.PROPERTIES.ALT_FIRE);
-for (const t of [...D.tanks].sort((a, b) => a.tier - b.tier)) {
+const hasZoom = def => arr(get(def, 'CONTROLLERS')).some(c => (Array.isArray(c) ? c[0] : c) === 'zoom');
+for (const t of [...TANKS].sort((a, b) => a.tier - b.tier)) {
     const def = Class[t.key];
     if (!def || !Array.isArray(def.GUNS)) continue;
     if (!t.parents.some(p => isBird(Class[p]))) continue;
+    const zoomFrom = t.parents.map(p => Class[p]).find(hasZoom);
+    if (zoomFrom) { def.CONTROLLERS = copy(arr(get(zoomFrom, 'CONTROLLERS'))); continue; }
     const firing = def.GUNS.filter(g => g.PROPERTIES && g.PROPERTIES.SHOOT_SETTINGS);
     const rear = firing.filter(rearGun);
     const front = firing.filter(g => !rearGun(g) && !g.PROPERTIES.AUTOFIRE && !['drone', 'necro', 'swarm'].includes(g.PROPERTIES.STAT_CALCULATOR));
@@ -45,8 +51,9 @@ function shotKind(pr) {
     if (calc === 'trap' || calc === 'block' || /trap|block/i.test(type)) return 'trap';
     return 'bullet';
 }
-for (const t of D.tanks) {
-    const def = Class[t.key];
+function floorShots(keys) {
+for (const key of keys) {
+    const def = Class[key];
     for (const g of arr(def && def.GUNS)) {
         const pr = g && g.PROPERTIES, ss = pr && pr.SHOOT_SETTINGS, pos = g && g.POSITION;
         if (!ss || !pos || !(ss.size >= 0.05)) continue;
@@ -56,10 +63,13 @@ for (const t of D.tanks) {
         pr.SHOOT_SETTINGS = { ...ss, size: floor / width };
     }
 }
+}
+floorShots(TANKS.map(t => t.key));
 
 const DRONE_RATE_CAP = 4 / 45;
-for (const t of D.tanks) {
-    const def = Class[t.key];
+function capDrones(keys) {
+for (const key of keys) {
+    const def = Class[key];
     const spawners = arr(def && def.GUNS).filter(g => {
         const pr = g && g.PROPERTIES, ss = pr && pr.SHOOT_SETTINGS;
         return ss && ss.reload > 0 && shotKind(pr) === 'drone' && (pr.STAT_CALCULATOR === 'drone' || pr.STAT_CALCULATOR === 'necro');
@@ -69,6 +79,8 @@ for (const t of D.tanks) {
     const slow = rate / DRONE_RATE_CAP;
     for (const g of spawners) g.PROPERTIES.SHOOT_SETTINGS = { ...g.PROPERTIES.SHOOT_SETTINGS, reload: g.PROPERTIES.SHOOT_SETTINGS.reload * slow };
 }
+}
+capDrones(TANKS.map(t => t.key));
 
 // 2. balance: every damage number of a new tank times s
 let made = 0;
@@ -88,13 +100,13 @@ function scaleGun(g, s, depth) {
 }
 function scaleTurret(t, s, depth) { return { ...t, TYPE: scaledType(t.TYPE, s, depth) }; }
 const snap = {};
-for (const key in D.balance) {
+for (const key in BALANCE) {
     const def = Class[key]; if (!def) continue;
     snap[key] = { guns: arr(get(def, 'GUNS')), turrets: arr(get(def, 'TURRETS')), body: body(def), smasher: !!get(def, 'IS_SMASHER') };
 }
 for (const key in snap) {
     // [4]: the turrets' own factor when it differs (a drone tank's autos ride on top: gen-tanks.js)
-    const [s, hp, , , ts] = D.balance[key], o = snap[key], def = Class[key];
+    const [s, hp, , , ts] = BALANCE[key], o = snap[key], def = Class[key];
     def.GUNS = o.guns.map(g => scaleGun(g, s, 0));
     def.TURRETS = o.turrets.map(t => scaleTurret(t, ts ?? s, 0));
     const b = { ...o.body };
@@ -133,9 +145,9 @@ for (const key in Class) {
 }
 
 // 3. the tree: Splitter in Desmos's slot, every new tank under each parent
-Class.basic.UPGRADES_TIER_1 = Class.basic.UPGRADES_TIER_1.map(k => D.removed.includes(k) ? D.root : k).filter((k, i, a) => a.indexOf(k) === i);
+Class.basic.UPGRADES_TIER_1 = Class.basic.UPGRADES_TIER_1.map(k => D.removed.includes(k) ? (INVENTED ? D.root : null) : k).filter((k, i, a) => k && a.indexOf(k) === i);
 const t5free = process.env.ROYALE_TANKS_T5_FREE === '1';
-for (const t of D.tanks) {
+for (const t of TANKS) {
     if (t.key === D.root) continue;
     const slot = 'UPGRADES_TIER_' + (t.tier === 5 && t5free ? 3 : t.tier - 1);
     for (const p of t.parents) {
@@ -144,5 +156,81 @@ for (const t of D.tanks) {
         if (!def[slot].includes(t.key)) def[slot].push(t.key);
     }
 }
+if (Config.armsrace_merge !== false) {
+    require('./armsRace/tanks.js');
+    const M = require('../armsrace_merge_data.js');
+    const merged = Object.keys(M.balance).filter(k => Class[k]);
+    const arSnap = {};
+    for (const key of merged) {
+        const def = Class[key];
+        arSnap[key] = { guns: arr(get(def, 'GUNS')), turrets: arr(get(def, 'TURRETS')), body: body(def), smasher: !!get(def, 'IS_SMASHER') };
+    }
+    for (const key of merged) {
+        const [s, hp] = M.balance[key], o = arSnap[key], def = Class[key];
+        def.GUNS = o.guns.map(g => scaleGun(g, s, 0));
+        def.TURRETS = o.turrets.map(t => scaleTurret(t, s, 0));
+        const b = { ...o.body };
+        if (o.smasher) b.DAMAGE = (b.DAMAGE ?? 1) * s;
+        if (hp !== 1) b.HEALTH = (b.HEALTH ?? 1) * hp;
+        def.BODY = b;
+    }
+    floorShots(merged);
+    capDrones(merged);
+    for (const [parent, child, slot] of M.links) {
+        const def = Class[parent];
+        if (!def || !Class[child]) continue;
+        const key = 'UPGRADES_TIER_' + (slot === 4 && t5free ? 3 : slot);
+        def[key] = [...arr(def[key])];
+        if (!def[key].includes(child)) def[key].push(child);
+    }
+}
 // 4. ram tanks (smasher lineage, or only thrusters / auto turrets) take the Smasher /
+const CUT_BRANCHES = ['xp_splitter', 'xp_bumper'];
+for (const key in Class) {
+    const def = Class[key];
+    if (!def || typeof def !== 'object') continue;
+    for (let t = 1; t <= 4; t++) {
+        const slot = 'UPGRADES_TIER_' + t;
+        if (Array.isArray(def[slot]) && def[slot].some(u => CUT_BRANCHES.includes(u))) def[slot] = def[slot].filter(u => !CUT_BRANCHES.includes(u));
+    }
+}
 require('../ramTanks.js').apply('basic');
+if (Config.power_budget !== false) {
+    let PB = null;
+    try { PB = require('../power_budget_data.js'); } catch { PB = null; }
+    if (PB) {
+        const treeKeys = [];
+        const seenPB = new Set(['basic']);
+        const queuePB = ['basic'];
+        while (queuePB.length) {
+            const k = queuePB.shift();
+            treeKeys.push(k);
+            for (let t = 1; t <= 4; t++) for (const u of arr(Class[k] && Class[k]['UPGRADES_TIER_' + t])) {
+                if (typeof u === 'string' && Class[u] && !seenPB.has(u)) { seenPB.add(u); queuePB.push(u); }
+            }
+        }
+        const snapPB = {};
+        for (const key of treeKeys) {
+            const def = Class[key];
+            snapPB[key] = { guns: arr(get(def, 'GUNS')), turrets: arr(get(def, 'TURRETS')), body: body(def), smasher: !!get(def, 'IS_SMASHER') };
+        }
+        for (const key of treeKeys) {
+            const fs = PB.fight[key] ?? 1, hs = PB.hp[key] ?? 1;
+            if (fs === 1 && hs === 1) continue;
+            const o = snapPB[key], def = Class[key];
+            def.GUNS = fs === 1 ? o.guns : o.guns.map(g => scaleGun(g, fs, 0));
+            def.TURRETS = fs === 1 ? o.turrets : o.turrets.map(t => scaleTurret(t, fs, 0));
+            const b = { ...o.body };
+            if (o.smasher && fs !== 1) b.DAMAGE = (b.DAMAGE ?? 1) * fs;
+            if (hs !== 1) b.HEALTH = (b.HEALTH ?? 1) * hs;
+            def.BODY = b;
+        }
+        for (const key of treeKeys) {
+            if (PB.fight[key] != null || PB.hp[key] != null) continue;
+            const def = Class[key], o = snapPB[key];
+            def.GUNS = o.guns;
+            def.TURRETS = o.turrets;
+            def.BODY = o.body;
+        }
+    }
+}

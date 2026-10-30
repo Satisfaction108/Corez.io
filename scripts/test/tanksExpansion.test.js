@@ -1,5 +1,6 @@
 // Expanded tank tree: node scripts/test/tanksExpansion.test.js
 'use strict';
+process.env.ROYALE_INVENTED_TANKS = process.env.ROYALE_INVENTED_TANKS ?? '1';
 
 const assert = require('node:assert/strict');
 const path = require('path');

@@ -25,6 +25,7 @@ const DEFAULTS = {
     rim_start: 0.86,
     rim_pull: 0.5,
     rim_wall: 400,
+    nest_keep: 0.55,
     pillars_per_vault: 0,
     pillar_radius: 200,
     pillar_ring: 0.5,
@@ -265,7 +266,7 @@ function plan(grid, circleR, pois, cfg) {
     for (let i = 0; i < ringCount; i++) {
         const mid = (i + 0.5) / ringCount;
         const rim = Math.max(0, Math.min(1, (mid - o.rim_start) / Math.max(0.01, 1 - o.rim_start)));
-        const nestKeep = mid < 0.16 ? 0.55 : 1;
+        const nestKeep = mid < 0.16 ? o.nest_keep : 1;
         rings[i].weight = Math.max(0, (1 - o.rim_pull * rim) * nestKeep);
         rings[i].free.sort((a, b) => b.score - a.score);
     }

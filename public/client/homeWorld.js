@@ -27,8 +27,8 @@
     var CELL_LIGHT = 'rgba(255,255,255,0.34)', CELL_DARK = 'rgba(0,0,0,0.14)', SIDE_INK = 'rgba(0,0,0,0.42)', SIDE_EDGE_INK = 'rgba(0,0,0,0.5)', SHADOW_INK = 'rgba(0,0,0,0.085)';
     var CRACK = { base: 'rgba(0,0,0,0.55)', hot: 'rgba(0,0,0,0.3)', fill: 'rgb(0,0,0)', hairCss: [] };
     for (var cst = 0; cst <= 5; cst++) CRACK.hairCss.push('rgba(255,248,226,' + (0.32 + 0.05 * cst).toFixed(2) + ')');
-    var TEAM = ['#00b2e1', '#f14e54', '#00e16e', '#bf7ff5', '#ffe869', '#2ee8c8'];
-    var GUN = '#999999', BORDER = '#000000', BORDER_K = 0.25;
+    var TEAM = ['#3ca4cb', '#e03e41', '#8abc3f', '#8d6adf', '#efc74b', '#7adbbc'];
+    var GUN = '#a7a7af', BORDER = '#484848', BORDER_K = 0.8;
     var ORE_ODDS = [0.5, 0.28, 0.16, 0.06];
 
     function mirror(g) { return [g, [g[0], g[1], g[2], g[3], -g[4], -g[5], g[6]]]; }

@@ -530,7 +530,7 @@ function aoSaveBots(all) {
         const body = live.get(fam);
         const id = body ? botRoster.entryOf(body, now()) : botRoster.identity(fam);
         if (!id) continue;
-        const data = { id: aoBotIdentity(id, s.name), stats: aoData(s) };
+        const data = { id: aoBotIdentity(id, s.name), stats: aoData(s), score: Math.max(0, Math.round(scoreOf(s))) };
         const sig = JSON.stringify(data);
         if (!all && s._aoSig === sig) continue;
         s._aoSig = sig;
@@ -689,6 +689,15 @@ function aoDailyReset(champs, oldDay, newDay) {
     try { global.gameManager.socketManager.broadcast(names ? "A new day has started! Yesterday's champions: " + names + "." : "A new day has started!"); } catch { }
 }
 function killScore() { return Math.round(KILL_SCORE * raidMods.num('killScoreMult', 1)); }
+const ARRAS_START_SCORE = 26263;
+const RESPAWN_KEEP = 0.25;
+const RESPAWN_KEEP_CAP = 400000;
+function killJackpot(victimScore) {
+    const jackpot = x => x > 39450 ? Math.pow(x - 26300, 0.85) + 26300 : x / 1.5;
+    const v = Math.max(0, +victimScore || 0);
+    return Math.max(KILL_SCORE, Math.round(jackpot(v + ARRAS_START_SCORE) - jackpot(ARRAS_START_SCORE)));
+}
+function respawnKeep(score) { return Math.min(RESPAWN_KEEP_CAP, Math.floor(Math.max(0, score) * RESPAWN_KEEP)); }
 // Round 10: kills are worth more as the raid goes on, the same steps as gems
 // (x1 / x1.5 / x2 by storm stage, storm.gemStageMult), so the late raid still
 // moves the board for everyone. ROYALE_STAGE_KILLS=0 turns it off.
@@ -739,7 +748,6 @@ function bankPtsOf(s) {
     const b = Math.max(0, s.banked | 0), rb = Math.max(0, Math.min(b, s.restoredBanked | 0));
     return rb + bankWeight(b - rb);
 }
-// deathCut: what deaths took off the board (each one halves it)
 function scoreOf(s) {
     const p = scoreParts(s);
     const raw = p.bank + p.kills + p.crown;
@@ -2752,8 +2760,7 @@ function onCombatantDead(body) {
         guard('team kill', () => teamMode.onKill(killerBody, body));
         if (ks) {
             ks.kills = (ks.kills | 0) + 1;
-            const featMult = killerBody.socket || killerBody.isBot ? dailyTanks.multForBody(killerBody) : 1;
-            const kp0 = Math.round((victimBot ? botKillScore() : killScore()) * killStageMult() * featMult);
+            const kp0 = share(killJackpot(scoreAtDeath));
             const kp = killerBody._fpFodder ? Math.round(kp0 * fairPlay.fodderShare(killerBody)) : kp0;
             if (victimBot) ks.botKills = (ks.botKills | 0) + 1;
             pts += kp;
@@ -2845,7 +2852,7 @@ function onCombatantDead(body) {
         };
     }
     if (s && !raidEndDeath) {
-        const cut = Math.floor(scoreOf(s) / 2);
+        const cut = scoreOf(s) - respawnKeep(scoreOf(s));
         if (cut > 0) s.deathCut = (s.deathCut || 0) + cut;
         if (s.lastDeath && body.socket) s.lastDeath.h = cut > 0 ? cut : undefined;
         if (PERKS_ON) guard('perks death', () => raidPerks.onDeath(perkBuildOf(s), scoreOf(s)));

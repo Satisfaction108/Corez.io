@@ -79,7 +79,7 @@ function localTankFallbackRows() {
     } catch {}
     if (!out.length) {
         const pool = (window.tankRecords && typeof window.tankRecords.dailyFeaturedFor === 'function')
-            ? ['Basic', 'Twin', 'Sniper', 'Machine Gun', 'Flank Guard', 'Director', 'Pounder', 'Trapper', 'Splitter',
+            ? ['Basic', 'Twin', 'Sniper', 'Machine Gun', 'Flank Guard', 'Director', 'Pounder', 'Trapper',
                'Triple Shot', 'Quad Tank', 'Twin Flank', 'Assassin', 'Hunter', 'Minigun', 'Destroyer', 'Builder', 'Overseer', 'Cruiser', 'Smasher',
                'Triplet', 'Penta Shot', 'Spreadshot', 'Ranger', 'Stalker', 'Predator', 'Streamliner', 'Annihilator', 'Hybrid', 'Skimmer',
                'Overlord', 'Manager', 'Factory', 'Battleship', 'Fighter', 'Booster', 'Bomber', 'Auto-Gunner', 'Nailgun', 'Sprayer', 'Gunner Trapper']

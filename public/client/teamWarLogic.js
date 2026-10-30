@@ -38,7 +38,7 @@ export function meterLine(frac, titanOut, tcd) {
 export function meterHint(frac, titanOut, tcd) {
     if (titanOut) return { text: "Your Titan is out, go help it", hot: false };
     if (tcd > 0) return { text: titanCdLine(tcd), hot: false };
-    if (frac >= 0.999) return { text: "Titan ready! Go to your War Pad", hot: true };
+    if (frac >= 0.999) return { text: "War Meter full! Vote on what your team gets", hot: true };
     return { text: "Bank gems and win fights to fill it", hot: false };
 }
 
@@ -122,7 +122,7 @@ export function tailAt(tails, x, y) {
 export function introLines(team) {
     return {
         title: "You're on the " + (teamName(team) || "Blue") + " team.",
-        body: "Bank gems at your team's vaults to raise the team score. Fill the War Meter, then call a Titan from your War Pad.",
+        body: "Bank gems at your team's vaults to raise the team score. Fill the War Meter, then vote with your team on a Radar Sweep, a Supply Drop or a Titan.",
     };
 }
 

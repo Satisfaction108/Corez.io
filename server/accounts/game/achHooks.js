@@ -321,7 +321,6 @@ function onUpgrade(body, tier, label) {
     if (!st) return;
     const s = body.socket;
     unlock(s, st, 'fs_tank');
-    max(s, st, 'tier', tier | 0);
     if (label) setAdd(s, st, 'tanks', String(label).slice(0, 32));
 }
 

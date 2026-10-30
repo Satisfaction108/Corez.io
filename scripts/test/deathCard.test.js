@@ -92,7 +92,7 @@ test('home: a live mining world behind the menu in the in-game rock art, capped 
     assert.match(hw, /var CRACK = \{ base: 'rgba\(0,0,0,0\.55\)'/, 'the game dark cracks');
     assert.match(hw, /polyPath\(c, x, y, h \* 1\.22, 8, Math\.PI \/ 8\);/, 'the in-game octagon vault');
     assert.match(hw, /S\.cacheL !== S\.light/, 'a theme switch rebakes');
-    assert.match(hw, /var TEAM = \['#00b2e1', '#f14e54'/, 'diep player colours');
+    assert.match(hw, /var TEAM = \['#3ca4cb', '#e03e41'/, 'arras player colours');
     assert.match(hw, /frame: frameStat\(S\)/, 'per frame cost is measured');
     assert.ok(!/requestAnimationFrame/.test(hw), 'home.js owns the loop');
     assert.match(css, /#homeBackdrop::after \{[^}]*radial-gradient/, 'a static calm patch behind the menu');

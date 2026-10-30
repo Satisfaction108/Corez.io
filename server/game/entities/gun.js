@@ -7,6 +7,8 @@ const MINING_RECOIL = (() => { const v = parseFloat(process.env.ROYALE_MINING_RE
 const MINING_RECOIL_MS = 450;
 const TANK_KID_CAP = 8;
 const TANK_NECRO_CAP = 14;
+const DRONE_CROWD_FREE = 3;
+const DRONE_CROWD_POW = 0.25;
 class Gun extends EventEmitter {
     constructor(body, info) {
         super();
@@ -261,7 +263,7 @@ class Gun extends EventEmitter {
                 // and Overclock (raidPerks.js), read off the tank at the root
                 const pkfx = this.body.master && this.body.master._pkfx;
                 const odBoost = ((this.body.overdriveUntil && Date.now() < this.body.overdriveUntil) ? 1.3 : 1) *
-                    ((this.body.rushUntil && Date.now() < this.body.rushUntil) ? 1.6 : 1) *
+                    ((this.body.rushUntil && Date.now() < this.body.rushUntil) ? 1.2 : 1) *
                     (pkfx ? pkfx.reload || 1 : 1);
                 this.cycleTimer += odBoost / (this.settings.reload * speed * (this.calculator == "necro" || this.calculator == "fixed reload" ? 1 : sk.rld));
             }
@@ -708,11 +710,19 @@ class Gun extends EventEmitter {
         const label = root && root.label;
         return label === "Big Cheese" || label === "Chieftain" || label === "Puppeteer" || label === "Sultan" ? m : 1;
     }
-    // The body size a shot is sized from: a grown tank's shots, drones and
-    // minions scale at growth^0.8 so projectiles match barrel widths.
     shotBodySize() {
         const g = this.growG();
-        return g > 1 ? this.body.size / Math.pow(g, 0.2) : this.body.size;
+        return g > 1 && this.calculator !== "drone" ? this.body.size / Math.pow(g, 0.2) : this.body.size;
+    }
+    droneCrowdSpeed() {
+        const guns = this.body && this.body.guns;
+        if (!guns || !guns.size) return 1;
+        if (this._droneCrowdOf === guns.size) return this._droneCrowd;
+        let bays = 0;
+        for (const g of guns.values()) if (g.canShoot && g.calculator === "drone") bays++;
+        this._droneCrowdOf = guns.size;
+        this._droneCrowd = bays > DRONE_CROWD_FREE ? Math.pow(DRONE_CROWD_FREE / bays, DRONE_CROWD_POW) : 1;
+        return this._droneCrowd;
     }
     growG() {
         const tank = this.body && this.body.master && this.body.master.growthMult > 1 ? this.body.master : this.body;
@@ -773,6 +783,7 @@ class Gun extends EventEmitter {
                 out.PENETRATION = Math.max(1, shoot.pen * (0.5 * (sk.pen - 1) + 1));
                 out.HEALTH = (shoot.health * sk.str + sizeFactor) / Math.pow(sk.pen, 0.8) * this.cheeseMul(1.5);
                 out.DAMAGE = shoot.damage * sk.dam * Math.sqrt(sizeFactor) * Math.sqrt(shoot.pen * sk.pen) * this.cheeseMul(1.4);
+                out.SPEED *= this.droneCrowdSpeed();
                 break;
         }
         if (this.independentChildren) return;

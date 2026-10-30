@@ -1,5 +1,6 @@
 'use strict';
 process.env.ROYALE_OPEN_GRACE_S = '0';
+process.env.ROYALE_INVENTED_TANKS = '1';
 
 const assert = require('node:assert/strict');
 const path = require('path');

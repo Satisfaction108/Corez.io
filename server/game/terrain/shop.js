@@ -9,23 +9,24 @@ const BULWARK = { r: 420, gap: 70, rate: 5, max: 36 };
 const STATPT_MAX = 10;
 const PAD_RADIUS = 95;
 
-const DRILL_MULT = [1, 1.12, 1.24, 1.36, 1.5, 1.65];
+const DRILL_MULT = [1, 1.05, 1.1, 1.15, 1.2, 1.25];
 // Satchel caps (owner, Oct 5 2026): 8,000
 const SATCHEL_BASE = 8000;
 const SATCHEL_STEP = 4000;
+const PERK_SATCHEL_STEP = 1000;
 
 // `retired`: off the shelf while the ability system is on (abilities.js),
 // back when ROYALE_ABILITIES=0. Their effects still work for anything that
 // already has them (old saves, twists, the tutorial). `fresh`: only sold
 // with the ability system on.
 const ITEMS = [
-    { id: "drill1", cat: "drill", tier: 1, name: "Drill I",   price: 500,   desc: "You mine 12% faster." },
-    { id: "drill2", cat: "drill", tier: 2, name: "Drill II",  price: 1500,  desc: "You mine 24% faster." },
-    { id: "drill3", cat: "drill", tier: 3, name: "Drill III", price: 3500,  desc: "You mine 36% faster." },
-    { id: "drill4", cat: "drill", tier: 4, name: "Drill IV",  price: 7500,  desc: "You mine 50% faster." },
-    { id: "drill5", cat: "drill", tier: 5, name: "Drill V",   price: 15000, desc: "You mine 65% faster, and you dig at full speed right after you respawn." },
+    { id: "drill1", cat: "drill", tier: 1, name: "Drill I",   price: 500,   desc: "You mine 5% faster." },
+    { id: "drill2", cat: "drill", tier: 2, name: "Drill II",  price: 1500,  desc: "You mine 10% faster." },
+    { id: "drill3", cat: "drill", tier: 3, name: "Drill III", price: 3500,  desc: "You mine 15% faster." },
+    { id: "drill4", cat: "drill", tier: 4, name: "Drill IV",  price: 7500,  desc: "You mine 20% faster." },
+    { id: "drill5", cat: "drill", tier: 5, name: "Drill V",   price: 15000, desc: "You mine 25% faster, and you dig at full speed right after you respawn." },
     // gear: timed (GEAR_MS); `on` is the message shown when it starts
-    { id: "statpt",    cat: "gear", name: "Stat Point",         price: 1000, desc: "Gives you one extra stat point that you keep after dying. You can buy up to 10 per raid.", aoDesc: "Gives you one extra stat point that you keep after dying. You can buy up to 10." },
+    { id: "statpt",    cat: "gear", name: "Stat Point",         price: 1000, retired: true, desc: "Gives you one extra stat point that you keep after dying. You can buy up to 10 per raid.", aoDesc: "Gives you one extra stat point that you keep after dying. You can buy up to 10." },
     { id: "scanner",   cat: "gear", name: "Ore Scanner",        price: 1000, desc: "Shows shard and emerald veins within 1.5km on your minimap for 5 minutes.", on: "Veins near you now show on your minimap." },
     { id: "magnet",    cat: "gear", name: "Gem Magnet",         price: 900,  desc: "Pulls in gems from almost twice as far away for 5 minutes.", on: "Gems now come to you from much farther away." },
     { id: "satchel",   cat: "gear", name: "Reinforced Satchel", price: 700,  desc: "You can carry 12,000 gems instead of 8,000 for 5 minutes, or 16,000 with Deep Pockets.", on: "Your satchel holds 4,000 more gems now." },
@@ -37,21 +38,21 @@ const ITEMS = [
     { id: "mark",      cat: "gear", name: "Hunter's Mark",      price: 1800, retired: true, desc: "Each kill is worth an extra 100 points for 5 minutes.", on: "Your kills now pay an extra 100 points." },
     { id: "wind",      cat: "gear", name: "Second Wind",        price: 800,  retired: true, desc: "For 5 minutes your spawn shield holds 10 seconds while you move, so you can get clear after a respawn. Shooting still drops it after 5 seconds.", on: "Your spawn shield now holds while you move for 10 seconds." },
     // kit: consumables, 3 distinct types at a time, used with Z / R / N
-    { id: "charge",    cat: "kit", name: "Seismic Charge", price: 350, max: 3, desc: "Throws a charge at your cursor (up to 500m away) that shatters every rock within 150m." },
+    { id: "charge",    cat: "kit", name: "Seismic Charge", price: 350, max: 3, retired: true, desc: "Throws a charge at your cursor (up to 500m away) that shatters every rock within 150m." },
     { id: "strut",     cat: "kit", name: "Support Strut",  price: 250, max: 3, retired: true, desc: "Props open everything within 320m of you for 3 minutes: nothing grows back there, and rock that is already regrowing crumbles." },
-    { id: "medkit",    cat: "kit", name: "Medkit",         price: 300, max: 3, desc: "Heals half your health on the spot and keeps the storm off you for 3 seconds." },
-    { id: "rocket",    cat: "kit", name: "Rocket Boots",   price: 300, max: 3, fresh: true, desc: "You move more than twice as fast for 7 seconds." },
+    { id: "medkit",    cat: "kit", name: "Medkit",         price: 300, max: 3, desc: "Heals a fifth of your health on the spot and keeps the storm off you for 3 seconds." },
+    { id: "rocket",    cat: "kit", name: "Rocket Boots",   price: 300, max: 3, fresh: true, desc: "You move 60% faster for 5 seconds." },
     { id: "flare",     cat: "kit", name: "Escape Flare",   price: 450, max: 2, fresh: true, desc: "Blinks you up to 420m toward the nearest vault, straight through rock." },
     { id: "overdrive", cat: "kit", name: "Overdrive Core", price: 450, max: 2, retired: true, desc: "Double mining power and 30% faster reload for 20 seconds." },
     { id: "anchor",    cat: "kit", name: "Storm Anchor",   price: 400, max: 2, desc: "The storm can't hurt you for 15 seconds." },
     { id: "flash",     cat: "kit", name: "Flash Vault",    price: 500, max: 2, desc: "Banks up to 1,000 of the gems you're carrying from wherever you are, minus a 30% fee." },
     { id: "bulwark",   cat: "kit", name: "Bulwark",        price: 300, max: 3, desc: "Quickly regrows the dug-out rock within 420m of you, so you get instant cover." },
     { id: "decoy",     cat: "kit", name: "Decoy Satchel",  price: 250, max: 3, desc: "Makes you look like you're carrying a full satchel for 20 seconds, to lure other players in." },
-    { id: "barrage",   cat: "kit", name: "Rock Barrage",   price: 3000, max: 1, desc: "Hurls 10 rock chunks at your cursor, and each one smashes through two rocks on the way. Every hit takes 9% of a tank's health, even through its shield." },
+    { id: "barrage",   cat: "kit", name: "Rock Barrage",   price: 3000, max: 1, retired: true, desc: "Hurls 10 rock chunks at your cursor, and each one smashes through two rocks on the way. Every hit takes 9% of a tank's health, even through its shield." },
     // sidearms: one mounted at a time, fired with the sidearm key (command bit 128)
-    { id: "flak",  cat: "arm", name: "Annihilator", price: 1500, desc: "Fires one huge annihilator shell at your cursor. It has a 7 second reload." },
-    { id: "lance", cat: "arm", name: "Drill Lance", price: 1200, desc: "Fires a bolt that shatters any rock it hits. It has a 5 second reload." },
-    { id: "pod",   cat: "arm", name: "Swarm Barrels", price: 1800, desc: "Adds two battleship barrels on each side that send seeker drones at your cursor. They burn out after 2.5 minutes." },
+    { id: "flak",  cat: "arm", name: "Annihilator", price: 1500, retired: true, desc: "Fires one huge annihilator shell at your cursor. It has a 7 second reload." },
+    { id: "lance", cat: "arm", name: "Drill Lance", price: 1200, retired: true, desc: "Fires a bolt that shatters any rock it hits. It has a 5 second reload." },
+    { id: "pod",   cat: "arm", name: "Swarm Barrels", price: 1800, retired: true, desc: "Adds two battleship barrels on each side that send seeker drones at your cursor. They burn out after 2.5 minutes." },
     // abilities (abilities.js): owned for the raid, one in the slot at a time
     ...require('./abilities.js').catalog().map(a => Object.assign(a, { fresh: true })),
 ];
@@ -217,7 +218,7 @@ function deepPockets(body) {
 }
 function satchelCap(body) {
     const pkStacks = Math.max(0, (body && body._pkfx && body._pkfx.satchel) | 0);
-    const deepBonus = pkStacks > 0 ? pkStacks * SATCHEL_STEP : (deepPockets(body) ? SATCHEL_STEP : 0);
+    const deepBonus = pkStacks > 0 ? pkStacks * PERK_SATCHEL_STEP : (deepPockets(body) ? SATCHEL_STEP : 0);
     return SATCHEL_BASE + (hasGear(body, "satchel") ? SATCHEL_STEP : 0) + deepBonus;
 }
 function depositRateMult(body) { return hasGear(body, "express") ? 2 : 1; }
@@ -728,11 +729,11 @@ function useKit(socket, slot, tx, ty, itemId) {
         }
         case "medkit": {
             if (!body.health || body.health.amount >= body.health.max * 0.995) { msg = "You're already at full health."; break; }
-            body.health.amount = Math.min(body.health.max, body.health.amount + body.health.max * 0.5);
+            body.health.amount = Math.min(body.health.max, body.health.amount + body.health.max * 0.2);
             // 3 s of storm immunity so the heal isn't erased inside the storm
             body.stormAnchorUntil = Math.max(body.stormAnchorUntil || 0, now + 3000);
             used = true;
-            msg = "You got half your health back, and the storm can't hurt you for 3 seconds.";
+            msg = "You got a fifth of your health back, and the storm can't hurt you for 3 seconds.";
             break;
         }
         case "overdrive": {
@@ -878,6 +879,10 @@ function tick(actors) {
                 if (padGeom.insidePad(s, body.x, body.y, (body.realSize || 60) * 0.5)) { padGeom.keepOut(body, s, 6, shopKey(s)); break; }
             }
             continue;
+        }
+        for (const s of list) {
+            if (!s.team || s.team === body.team) continue;
+            if (padGeom.insidePad(s, body.x, body.y, (body.realSize || 60) * 0.5)) { padGeom.keepOut(body, s, 6, shopKey(s), true); break; }
         }
         for (const s of list) if ((!s.team || s.team === body.team) && padGeom.insidePad(s, body.x, body.y, 0)) { s._onPad.push(body); break; }
     }

@@ -5,7 +5,7 @@
 
 export const CHAT_HISTORY = 40;      // lines kept
 export const CHAT_SHOW = 7;          // lines shown (desktop)
-export const CHAT_SHOW_TOUCH = 3;    // lines shown on a phone
+export const CHAT_SHOW_TOUCH = 2;
 export const CHAT_FADE_MS = 25000;   // a line stays up this long...
 export const CHAT_FADE_OUT_MS = 2500;   // ...then fades out over this
 export const NAME_MAX = 16;          // characters of a name before the "…"

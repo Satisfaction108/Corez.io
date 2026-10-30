@@ -9,14 +9,19 @@ const TEAM_SIZE = (() => { const n = parseInt(process.env.ROYALE_TEAM_SIZE, 10);
 const KILL_PTS = 100;
 const BOT_KILL_PTS = 60;
 const BATTLE_PTS = 1500;
-const WAR_PER_PLAYER = 1600;
-const WAR_MIN = 6000;
-const WAR_MAX = 16000;
+const WAR_PER_PLAYER = 4800;
+const WAR_MIN = 18000;
+const WAR_MAX = 48000;
 const CALLS = {
-    radar: { cost: 0.25, name: 'Radar Sweep' },
-    supply: { cost: 0.4, name: 'Supply Drop' },
+    radar: { cost: 1, name: 'Radar Sweep' },
+    supply: { cost: 1, name: 'Supply Drop' },
     titan: { cost: 1, name: 'Titan' },
 };
+const POLL_KINDS = ['radar', 'supply', 'titan'];
+const POLL_MS = 30_000;
+const POLL_RETRY_MS = 5_000;
+const BOT_VOTE_MIN_MS = 2_000;
+const BOT_VOTE_MAX_MS = 14_000;
 const SMALL_CD_MS = 90_000;
 const TITAN_CHANNEL_MS = 3000;
 const BOT_CALL_AFTER_MS = 30_000;
@@ -43,6 +48,7 @@ function fresh() {
         score: { [BLUE]: 0, [RED]: 0 },
         war: { [BLUE]: 0, [RED]: 0 },
         fullAt: { [BLUE]: 0, [RED]: 0 },
+        warFull: { [BLUE]: false, [RED]: false },
         smallCdUntil: { [BLUE]: 0, [RED]: 0 },
         radarUntil: { [BLUE]: 0, [RED]: 0 },
         day: dayKey(),
@@ -50,6 +56,8 @@ function fresh() {
         tail: new Map(),
         orders: new Map(),
         jobs: new Map(),
+        poll: { [BLUE]: null, [RED]: null },
+        pollRetryAt: { [BLUE]: 0, [RED]: 0 },
         protectors: [],
         savedAt: 0,
         tickAt: 0,
@@ -298,15 +306,12 @@ function addScore(team, n) {
 function addWar(team, n, t = Date.now()) {
     if (!active || !L.isTeam(team) || !(n > 0)) return;
     const need = warNeed(team);
-    const before = st.war[team];
-    st.war[team] = Math.min(need, before + n);
-    if (before < need && st.war[team] >= need && !st.fullAt[team]) {
-        st.fullAt[team] = t;
-        hook('teamCallout', team, 'warfull', "Titan ready", "Stand on your War Pad and hold to call it in.", 3200);
-    }
+    if (st.warFull[team]) return;
+    st.war[team] = Math.min(need, st.war[team] + n);
+    if (st.war[team] >= need) { st.warFull[team] = true; if (!st.fullAt[team]) st.fullAt[team] = t; }
 }
 
-function warFrac(team) { return Math.min(1, st.war[team] / warNeed(team)); }
+function warFrac(team) { return st.warFull[team] ? 1 : Math.min(1, st.war[team] / warNeed(team)); }
 
 function onBanked(body, amount) {
     const team = teamOf(body);
@@ -371,53 +376,135 @@ function callState(team, t = Date.now()) {
 
 function spend(team, cost) {
     const need = warNeed(team);
-    st.war[team] = Math.max(0, st.war[team] - Math.round(need * cost));
-    if (st.war[team] < need) st.fullAt[team] = 0;
+    st.war[team] = cost >= 1 ? 0 : Math.max(0, st.war[team] - Math.round(need * cost));
+    st.warFull[team] = false;
+    st.fullAt[team] = 0;
 }
 
 function sayTo(body, text) { try { if (body && body.socket) body.sendMessage(text); } catch { /* */ } }
 
-function request(body, kind, laneName, t = Date.now()) {
+function voterKey(body) {
+    if (!body) return null;
+    const sk = body.socket;
+    if (!sk) return body.isBot ? 'b:' + body.id : null;
+    return sk.account && sk.account.id ? 'a:' + sk.account.id : 'g:' + (sk.guestId || body.id);
+}
+function humansOn(team) { return fighters().filter(b => b.team === team && b.socket && !b.isBot); }
+function votersOn(team) { return fighters().filter(b => b.team === team && (b.socket || b.isBot)); }
+function botChoice(team, bot, opts, t) {
+    const foe = L.other(team);
+    const w = { radar: 1, supply: 1, titan: opts.titan ? 2 : 0 };
+    const behind = (st.score[foe] | 0) - (st.score[team] | 0);
+    if (behind > 0) w.titan *= 1.8;
+    if (titan().aliveFor(foe)) { w.radar += 1.5; w.supply += 0.5; }
+    if (bot && bot.health && bot.health.max > 0 && bot.health.amount / bot.health.max < 0.5) w.supply += 1.2;
+    const enemiesNearBase = fighters().filter(b => b.team === foe && L.inBase && L.inBase(team, b.x, b.y, 900)).length;
+    if (enemiesNearBase >= 2) w.radar += 1;
+    const kinds = POLL_KINDS.filter(k => opts[k] && w[k] > 0);
+    let total = 0;
+    for (const k of kinds) total += w[k];
+    let r = Math.random() * total;
+    for (const k of kinds) { r -= w[k]; if (r < 0) return k; }
+    return kinds[kinds.length - 1] || 'supply';
+}
+function pollOptions(team, t = Date.now()) {
+    return { radar: true, supply: true, titan: !titan().aliveFor(team) && titan().cooldownLeft(team, t) <= 0 };
+}
+function pollCounts(p) {
+    const n = { radar: 0, supply: 0, titan: 0 };
+    if (p) for (const v of p.votes.values()) if (n[v] != null) n[v]++;
+    return n;
+}
+function pollWinner(p, opts) {
+    const n = pollCounts(p);
+    const avail = POLL_KINDS.filter(k => opts[k]);
+    const top = Math.max(...avail.map(k => n[k]));
+    const tied = avail.filter(k => n[k] === top);
+    if (tied.length === 1) return tied[0];
+    if (tied.includes('titan')) return 'titan';
+    return tied[Math.floor(Math.random() * tied.length)];
+}
+function vote(body, kind, t = Date.now()) {
     if (!active || !alive(body)) return false;
     const team = teamOf(body);
-    if (!team) return false;
-    if (!onWarPad(body)) { sayTo(body, "Stand on your War Pad to use the War Meter."); return false; }
-    const cs = callState(team, t);
-    if (kind === 'radar' || kind === 'supply') {
-        if (!cs[kind]) {
-            if (cs.smallCd > 0) sayTo(body, CALLS[kind].name + " is ready again in " + cs.smallCd + " seconds.");
-            else sayTo(body, "The War Meter needs " + Math.round(CALLS[kind].cost * 100) + "% for a " + CALLS[kind].name + ".");
-            return false;
-        }
-        spend(team, CALLS[kind].cost);
-        st.smallCdUntil[team] = t + SMALL_CD_MS;
-        if (kind === 'radar') {
-            st.radarUntil[team] = t + RADAR_MS;
-            hook('teamCallout', team, 'radar', "Radar Sweep", (body.name || "A teammate") + " lit up every enemy for 15 seconds.", 2600);
-            hook('teamCallout', L.other(team), 'radarfoe', "You've been spotted", "The " + L.teamName(team) + " team can see everyone for 15 seconds.", 2600);
-        } else {
-            const ok = hook('supplyTeam', team, L.supplySpots(team), t);
-            if (!ok) {
-                st.war[team] += Math.round(warNeed(team) * CALLS.supply.cost);
-                st.smallCdUntil[team] = 0;
-                sayTo(body, "No crate could land right now, so your War Meter was refunded. Try again in a moment.");
-                return false;
-            }
-            hook('teamCallout', team, 'supply', "Supply Drop", "Two crates are dropping in your base yard. Only your team can open them.", 3000);
-        }
-        return true;
+    const p = team && st.poll[team];
+    const key = voterKey(body);
+    if (!p || !key) return false;
+    if (!POLL_KINDS.includes(kind) || !pollOptions(team, t)[kind]) {
+        if (kind === 'titan') sayTo(body, "Your Titan is still out or cooling down, so pick something else.");
+        return false;
     }
+    p.votes.set(key, kind);
+    return true;
+}
+function request(body, kind, laneName, t = Date.now()) { return vote(body, kind, t); }
+function fireCall(team, kind, t) {
     if (kind === 'titan') {
-        if (!cs.titan) {
-            sayTo(body, cs.titanOut ? "Your Titan is already out there. You can still use Radar Sweep and Supply Drop."
-                : cs.titanCd > 0 ? "Your team can call another Titan in " + cs.titanCd + " seconds."
-                : "The War Meter needs to be full to call the Titan.");
-            return false;
-        }
-        body._tmChannel = { kind: 'titan', lane: laneName === 'flank' ? 'flank' : 'middle', startAt: t, until: t + TITAN_CHANNEL_MS };
+        if (launchTitan(team, Math.random() < 0.3 ? 'flank' : 'middle', null, t)) return true;
+        kind = 'supply';
+    }
+    if (kind === 'radar') {
+        spend(team, CALLS.radar.cost);
+        st.radarUntil[team] = t + RADAR_MS;
+        hook('teamCallout', team, 'radar', "Radar Sweep", "Your team voted for a Radar Sweep. Every enemy is lit up for 15 seconds.", 2600);
+        hook('teamCallout', L.other(team), 'radarfoe', "You've been spotted", "The " + L.teamName(team) + " team can see everyone for 15 seconds.", 2600);
         return true;
     }
-    return false;
+    const ok = hook('supplyTeam', team, L.supplySpots(team), t);
+    if (!ok) { st.pollRetryAt[team] = t + POLL_RETRY_MS; return false; }
+    spend(team, CALLS.supply.cost);
+    hook('teamCallout', team, 'supply', "Supply Drop", "Your team voted for a Supply Drop. Two crates are landing in your base yard.", 3000);
+    return true;
+}
+function tickPolls(t) {
+    for (const team of TEAMS) {
+        const full = warFrac(team) >= 1;
+        if (!full) { st.poll[team] = null; st.fullAt[team] = 0; continue; }
+        if (!st.fullAt[team]) st.fullAt[team] = t;
+        let p = st.poll[team];
+        if (!p) {
+            if (t < st.pollRetryAt[team]) continue;
+            const botAt = new Map();
+            for (const b of votersOn(team)) if (!b.socket) botAt.set(b.id, t + BOT_VOTE_MIN_MS + Math.random() * (BOT_VOTE_MAX_MS - BOT_VOTE_MIN_MS));
+            st.poll[team] = { openedAt: t, votes: new Map(), botAt };
+            hook('teamCallout', team, 'poll', "War Meter full", "Vote on what your team gets next.", 2600);
+            continue;
+        }
+        const opts = pollOptions(team, t);
+        const voters = votersOn(team);
+        for (const b of voters) {
+            if (b.socket) continue;
+            let at = p.botAt.get(b.id);
+            if (at == null) { at = t + BOT_VOTE_MIN_MS + Math.random() * (BOT_VOTE_MAX_MS - BOT_VOTE_MIN_MS); p.botAt.set(b.id, at); }
+            const key = voterKey(b);
+            if (t >= at && !p.votes.has(key)) p.votes.set(key, botChoice(team, b, opts, t));
+        }
+        const keys = new Set(voters.map(voterKey).filter(Boolean));
+        for (const [k, v] of p.votes) if (!keys.has(k) || !opts[v]) p.votes.delete(k);
+        const age = t - p.openedAt;
+        const allIn = keys.size > 0 && [...keys].every(k => p.votes.has(k));
+        const due = allIn || age >= POLL_MS;
+        if (!due) continue;
+        const kind = pollWinner(p, opts);
+        st.poll[team] = null;
+        fireCall(team, kind, t);
+    }
+}
+function pollFor(team, body, t = Date.now()) {
+    const p = st.poll[team];
+    if (!p) return null;
+    const opts = pollOptions(team, t);
+    const n = pollCounts(p);
+    const mine = body ? p.votes.get(voterKey(body)) : null;
+    const age = t - p.openedAt;
+    const left = Math.max(0, Math.ceil((POLL_MS - age) / 1000));
+    return {
+        o: POLL_KINDS.map(k => opts[k] ? 1 : 0),
+        n: POLL_KINDS.map(k => n[k]),
+        m: mine ? POLL_KINDS.indexOf(mine) + 1 : 0,
+        left,
+        h: humansOn(team).length,
+    };
 }
 
 function cancel(body) { if (body) body._tmChannel = null; }
@@ -475,47 +562,6 @@ function tickTails(t, dt) {
         } else if (present.length === 0 || (present.length === 1 && present[0] === s.owner)) {
             s.prog = Math.max(0, s.prog - dt * 1.5);
             if (s.prog === 0) s.by = 0;
-        }
-    }
-}
-
-function tickChannels(t) {
-    for (const b of fighters()) {
-        const ch = b._tmChannel;
-        if (!ch) continue;
-        if (!onWarPad(b) || !callState(b.team, t).titan) { b._tmChannel = null; continue; }
-        if (t >= ch.until) {
-            b._tmChannel = null;
-            launchTitan(b.team, ch.lane, b, t);
-        }
-    }
-}
-
-function tickFullMeters(t) {
-    for (const team of TEAMS) {
-        if (st.fullAt[team] && warFrac(team) < 1) st.fullAt[team] = 0;
-        if (!st.fullAt[team] && warFrac(team) >= 1) st.fullAt[team] = t;
-        if (st.fullAt[team] && (titan().aliveFor(team) || titan().cooldownLeft(team, t) > 0)) st.fullAt[team] = t;
-        if (!st.fullAt[team] || titan().aliveFor(team) || titan().cooldownLeft(team, t) > 0) { st.jobs.delete(team); continue; }
-        const waited = t - st.fullAt[team];
-        const someoneOnIt = fighters().some(b => b.team === team && b._tmChannel);
-        if (someoneOnIt) continue;
-        if (waited >= AUTO_CALL_AFTER_MS && callState(team, t).titan) { st.jobs.delete(team); launchTitan(team, 'middle', null, t); continue; }
-        if (waited >= BOT_CALL_AFTER_MS) {
-            const job = st.jobs.get(team);
-            if (job && alive(job.bot) && job.bot.team === team) {
-                if (onWarPad(job.bot) && !job.bot._tmChannel) request(job.bot, 'titan', job.lane, t);
-                continue;
-            }
-            const pad = warPadOf(team);
-            let best = null, bd = Infinity;
-            for (const b of fighters()) {
-                if (b.team !== team || !b.isBot || b.socket) continue;
-                if (t - Math.max(b._lastDamageAt || 0, b.hitAt || 0) < 4000) continue;
-                const d = Math.hypot(b.x - pad.x, b.y - pad.y);
-                if (d < bd) { bd = d; best = b; }
-            }
-            if (best) st.jobs.set(team, { bot: best, lane: Math.random() < 0.3 ? 'flank' : 'middle', at: t });
         }
     }
 }
@@ -637,9 +683,8 @@ function tick(t = Date.now()) {
     const dt = st.tickAt ? Math.min(500, t - st.tickAt) : 0;
     st.tickAt = t;
     rollDay(t);
-    tickChannels(t);
     tickTails(t, dt);
-    tickFullMeters(t);
+    tickPolls(t);
     if (t - st.orderAt >= 500) { st.orderAt = t; assignOrders(t); }
     try { titan().tick(t); } catch (e) { console.error('[TEAMS] titan tick', e && e.stack || e); }
     saveScore(false);
@@ -659,7 +704,7 @@ function snapshot(t = Date.now()) {
         rd: TEAMS.map(team => Math.max(0, Math.ceil((st.radarUntil[team] - t) / 1000))),
         ti: titan().snapshot(t),
         tails,
-        pads: L.warPads().map(p => ({ x: p.x, y: p.y, r: p.r, t: L.teamNo(p.team) })),
+        pads: [],
         bases: TEAMS.map(team => ({ t: L.teamNo(team), ...L.baseRect(team) })),
         day: st.day,
         lw: st.lastWinner || 0,
@@ -680,10 +725,10 @@ function forClient(client, body, t = Date.now()) {
         if (radar) foes.push([b.id, Math.round(b.x), Math.round(b.y)]);
     }
     const out = { t: L.teamNo(team), mates, foes, radar: radar ? 1 : 0 };
+    out.poll = pollFor(team, body, t);
     if (body && alive(body)) {
-        const onPad = onWarPad(body);
         const cs = callState(team, t);
-        out.pad = onPad ? 1 : 0;
+        out.pad = 0;
         out.can = [cs.radar ? 1 : 0, cs.supply ? 1 : 0, cs.titan ? 1 : 0];
         out.cd = cs.smallCd;
         out.tOut = cs.titanOut ? 1 : 0;
@@ -698,15 +743,14 @@ function onPacket(socket, args) {
     const body = socket.player.body;
     if (!alive(body)) return;
     const what = args && args[0];
-    const kinds = { 1: ['radar'], 2: ['supply'], 3: ['titan', 'middle'], 4: ['titan', 'flank'] };
-    if (what === 0) { cancel(body); return; }
+    const kinds = { 1: 'radar', 2: 'supply', 3: 'titan', 4: 'titan' };
     const k = kinds[what];
     if (!k) return;
-    request(body, k[0], k[1]);
+    vote(body, k);
 }
 
 function reset() {
-    for (const team of TEAMS) { st.war[team] = 0; st.fullAt[team] = 0; st.smallCdUntil[team] = 0; st.radarUntil[team] = 0; }
+    for (const team of TEAMS) { st.war[team] = 0; st.fullAt[team] = 0; st.smallCdUntil[team] = 0; st.radarUntil[team] = 0; st.poll[team] = null; st.pollRetryAt[team] = 0; st.warFull[team] = false; }
     st.orders = new Map();
     st.jobs = new Map();
     for (const v of tailVaults()) { v.team = v.homeTeam || 0; v.rainbow = !v.team; st.tail.set(v, { owner: v.team, prog: 0, by: 0 }); }
@@ -734,6 +778,6 @@ module.exports = {
     layout: L, on, isActive, attach, activate, deactivate, reset, tick, snapshot, forClient, onPacket,
     teamForHuman, teamForBot, botCap, applyColor, colorOf, teamOf, watchHits,
     onBanked, onKill, onBattleEnd, onSiege, onTitanKilled, addScore, addWar, warFrac, warNeed, scores,
-    request, cancel, launchTitan, callState, onWarPad, warPadOf, botOrderFor, bankSitesFor, canUseVault, canUseShop,
+    request, vote, pollFor, cancel, launchTitan, callState, onWarPad, warPadOf, botOrderFor, bankSitesFor, canUseVault, canUseShop,
     spawnSpotFor, tailVaults, debugInfo, inviteCode, joinCode,
 };

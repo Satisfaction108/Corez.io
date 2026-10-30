@@ -351,7 +351,11 @@ function apply(grid, { canyonKeys, outpostCells, chamberCells }) {
     }
 
     const terrainCfg = typeof Config !== 'undefined' && Config.dig_royale_terrain;
-    if (!tutorial && terrainCfg && terrainCfg.open_layout) carveOpenLayout(grid, circleR, canyonKeys, terrainCfg.open_layout);
+    if (!tutorial && terrainCfg && terrainCfg.open_layout) {
+        const ol = terrainCfg.open_layout;
+        const use = teams && ol.team_open_target != null ? Object.assign({}, ol, { open_target: ol.team_open_target }) : ol;
+        carveOpenLayout(grid, circleR, canyonKeys, use);
+    }
 
     // Re-roll ore radially: buildVoronoi assigned 2TDM's horizontal depth
     // tiers, which mean nothing on a circle.

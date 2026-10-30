@@ -42,8 +42,26 @@ function digPower(settings) {
     return power * Math.min(SLOW_CAP, Math.max(1, settings.reload / BASIC_RELOAD));
 }
 
+let budgetRock = undefined;
+function budgetRockTable() {
+    if (budgetRock !== undefined) return budgetRock;
+    budgetRock = null;
+    if (typeof Config !== 'undefined' && Config.power_budget === false) return budgetRock;
+    try { budgetRock = require('../../lib/definitions/power_budget_data.js').rock || null; } catch { budgetRock = null; }
+    return budgetRock;
+}
 function tankBias(owner) {
     if (!owner) return 1;
+    const table = budgetRockTable();
+    if (table) {
+        if (Array.isArray(owner.defs)) {
+            for (let i = owner.defs.length - 1; i >= 0; i--) {
+                const d = owner.defs[i];
+                if (typeof d === 'string') return table[d] ?? 1;
+            }
+        }
+        return 1;
+    }
     if (Array.isArray(owner.defs)) {
         for (let i = owner.defs.length - 1; i >= 0; i--) {
             const d = owner.defs[i];

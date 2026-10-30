@@ -1,78 +1,74 @@
 var color = {
     // Ingame arras themes
     "normal": {
-        // the same gem colours as the dark theme, a touch deeper for a light floor
-        "blue": "#2f7ff2", // Blue Team: sapphire
-        "green": "#2fbf68", // Green Team: emerald
-        "red": "#f0405a", // Red Team: ruby
-        "magenta": "#ac5cf0", // Purple Team: amethyst
-        "mustard": "#f2b21e", // Yellow Team: topaz
-        "tangerine": "#f57a1c", // Orange Team: amber
-        "brown": "#cf8446", // Brown Team: polished copper
-        "cyan": "#1fc6d9", // Cyan Team: crystal
-        "yellow": "#fdf380", // Netural Team
-        "dgrey": "#726f6f", // Rogue Team
+        "blue": "#3ca4cb",
+        "green": "#8abc3f",
+        "red": "#e03e41",
+        "magenta": "#8d6adf",
+        "mustard": "#ffe869",
+        "tangerine": "#ec7b0f",
+        "brown": "#d68165",
+        "cyan": "#13b2c4",
+        "yellow": "#fdf380",
+        "dgrey": "#726f6f",
 
-        "vlgrey": "#e8ebf7", // Eggs
-        "gold": "#efc74b", // Squares
-        "orange": "#e7896d", // Triangles
-        "purple": "#8d6adf", // Pentagons
-        "aqua": "#7adbba", // Hexagons
-        "pink": "#ef99c3", // Crashers
-        "lavender": "#b58efd", // Nest
-        "lgrey": "#a4a4ad", // Maze Walls (#aa9f9e is old lgrey (todo: reassign this as beige))
+        "vlgrey": "#e8ebf7",
+        "gold": "#efc74b",
+        "orange": "#e7896d",
+        "purple": "#8d6adf",
+        "aqua": "#7adbba",
+        "pink": "#ef99c3",
+        "lavender": "#b58efd",
+        "lgrey": "#a4a4ad",
 
-        "lgreen": "#b9e87e", // Health Bars, Shiny Polygons
-        "teal": "#7ad3db", // Shield Bars, Legendary Polygons
+        "lgreen": "#b9e87e",
+        "teal": "#7ad3db",
 
-        "guiwhite": "#ffffff", // Text
-        "white": "#dbdbdb", // Arena Background
-        "grey": "#a7a7af", // Barrels, Bar Backgrounds
-        "black": "#484848", // Borders
-        "guiblack": "#000000", // Grid
+        "guiwhite": "#ffffff",
+        "white": "#dbdbdb",
+        "grey": "#a7a7af",
+        "black": "#484848",
+        "guiblack": "#000000",
         "paletteSize": 20,
-        "border": 0.65
+        "border": 0.5
     },
     "dark": {
-        // Tank colours as cut gems, so tanks look like they belong in the ore
-        // world and pop off the rock: sapphire, emerald, ruby, amethyst,
-        // topaz, amber, copper, crystal. Bright, never dull.
-        "blue": "#3f8cff", // Blue Team (also the player's own color): sapphire
-        "green": "#3fd27a", // Green Team: emerald
-        "red": "#ff5068", // Red Team: ruby
-        "magenta": "#c070ff", // Purple Team: amethyst
-        "mustard": "#ffc23a", // Yellow Team: topaz
-        "tangerine": "#ff8a2e", // Orange Team: amber
-        "brown": "#e0965a", // Brown Team: polished copper
-        "cyan": "#2fd8ea", // Cyan Team: crystal
-        "yellow": "#caca4e", // Netural Team
-        "dgrey": "#73747a", // Rogue Team
+        "blue": "#3ca4cb",
+        "green": "#8abc3f",
+        "red": "#e03e41",
+        "magenta": "#8d6adf",
+        "mustard": "#ffe869",
+        "tangerine": "#ec7b0f",
+        "brown": "#d68165",
+        "cyan": "#13b2c4",
+        "yellow": "#caca4e",
+        "dgrey": "#73747a",
 
-        "vlgrey": "#1e1e1e", // Eggs
-        "gold": "#ffc665", // Squares
-        "orange": "#c46748", // Triangles
-        "purple": "#9673e8", // Pentagons
-        "aqua": "#62caa7", // Hexagons
-        "pink": "#d153cc", // Crashers
-        "lavender": "#7d56c5", // Nest
-        "lgrey": "#3c3a3a", // Maze Walls
+        "vlgrey": "#1e1e1e",
+        "gold": "#ffc665",
+        "orange": "#c46748",
+        "purple": "#9673e8",
+        "aqua": "#62caa7",
+        "pink": "#d153cc",
+        "lavender": "#7d56c5",
+        "lgrey": "#3c3a3a",
 
-        "lgreen": "#26bf57", // Health Bars, Shiny Polygons
-        "teal": "#6ecedc", // Shield Bars, Legendary Polygons
+        "lgreen": "#26bf57",
+        "teal": "#6ecedc",
 
-        "guiwhite": "#f2f2f2", // Text
-        "white": "#0a0a0a", // Arena Background
-        "grey": "#42404e", // Barrels, Bar Backgrounds
-        "black": "#131313", // Borders
-        "guiblack": "#ffffff", // Grid
+        "guiwhite": "#f2f2f2",
+        "white": "#0a0a0a",
+        "grey": "#42404e",
+        "black": "#131313",
+        "guiblack": "#ffffff",
         "paletteSize": 20,
         "border": 0.15
     },
     "classic": {
-        "blue": "#00b2e1", // Blue Team
-        "green": "#00e16e", // Green Team
-        "red": "#f14e54", // Red Team
-        "magenta": "#bf7ff5", // Purple Team
+        "blue": "#3ca4cb", // Blue Team
+        "green": "#8abc3f", // Green Team
+        "red": "#e03e41", // Red Team
+        "magenta": "#8d6adf", // Purple Team
         "mustard": "#c49608", // Yellow Team
         "tangerine": "#ec7b0f", // Orange Team
         "brown": "#895918", // Brown Team (#d68165 is more accurate to diep)
@@ -94,8 +90,8 @@ var color = {
 
         "guiwhite": "#ffffff", // Text
         "white": "#cccccc", // Arena Background
-        "grey": "#999999", // Barrels, Bar Backgrounds
-        "black": "#444444", // Borders
+        "grey": "#a7a7af", // Barrels, Bar Backgrounds
+        "black": "#484848", // Borders
         "guiblack": "#000000", // Grid
         "paletteSize": 20,
         "border": 0.5

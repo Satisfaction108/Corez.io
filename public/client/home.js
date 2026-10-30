@@ -289,49 +289,52 @@
         return n + (t >= 11 && t <= 13 ? 'th' : u === 1 ? 'st' : u === 2 ? 'nd' : u === 3 ? 'rd' : 'th');
     }
     function initChampions() {
-        var holder = document.querySelector('.startButtonHolder');
-        if (!holder || !window.fetch) return;
+        var box = document.getElementById('aoChampions');
+        if (!box || !window.fetch) return;
         var guest = '';
         try { guest = localStorage.getItem('dwGuestId') || ''; } catch (e) { }
         var json = function (r) { return r.ok ? r.json() : null; };
         var none = function () { return null; };
+        var el = function (tag, cls, text) {
+            var n = document.createElement(tag);
+            if (cls) n.className = cls;
+            if (text != null) n.textContent = text;
+            return n;
+        };
+        var line = function (label, value) {
+            var row = el('div', 'ao-line');
+            row.appendChild(el('b', '', label));
+            row.appendChild(el('span', '', value));
+            return row;
+        };
         Promise.all([
             fetch('/api/champions', { credentials: 'same-origin' }).then(json, none),
             fetch('/api/champions/me', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-DW': '1' }, body: JSON.stringify(/^[a-f0-9]{32}$/.test(guest) ? { guestId: guest } : {}) }).then(json, none)
         ]).then(function (res) {
             var d = res[0], me = res[1];
             if (!d || !d.on) return;
-            var champs = d.champs || [], top = d.top || [], mine = [];
-            if (me && me.yesterday && me.yesterday.place) mine.push('You were ' + ordinal(me.yesterday.place) + ' yesterday.');
-            if (me && me.today && me.today.place) mine.push((mine.length ? 'Today' : 'Today you are') + ' ' + ordinal(me.today.place) + ' of ' + me.today.of + ' so far.');
-            if (!champs.length && !top.length && !mine.length) return;
-            var box = document.createElement('div');
-            box.id = 'aoChampions';
-            box.className = 'ao-champs';
-            if (mine.length) {
-                var y = document.createElement('div');
-                y.className = 'ao-you';
-                y.textContent = mine.join(' ');
-                box.appendChild(y);
-            }
+            var champs = (d.champs || []).slice().sort(function (x, y) { return x.place - y.place; }).slice(0, 3);
+            var today = me && me.today && me.today.place ? me.today : null;
+            var yday = me && me.yesterday && me.yesterday.place ? me.yesterday : null;
+            if (!champs.length && !today && !yday) return;
+            box.textContent = '';
+            if (today) box.appendChild(line('Today:', ordinal(today.place) + ' of ' + today.of));
+            if (yday) box.appendChild(line('Yesterday:', ordinal(yday.place) + (yday.of ? ' of ' + yday.of : '')));
             if (champs.length) {
-                var a = document.createElement('div');
-                var lab = document.createElement('b');
-                lab.className = 'ao-label';
-                lab.textContent = "Yesterday's champions: ";
-                a.appendChild(lab);
-                a.appendChild(document.createTextNode(champs.map(function (c) { return c.place + '. ' + c.name; }).join(',  ')));
-                box.appendChild(a);
+                box.appendChild(el('div', 'ao-head', "Yesterday's Winners"));
+                var podium = el('div', 'ao-podium');
+                champs.forEach(function (c) {
+                    var p = el('div', 'ao-place');
+                    var medal = el('span', 'ao-medal p' + Math.min(3, Math.max(1, c.place | 0)), ordinal(c.place | 0));
+                    p.appendChild(medal);
+                    var nm = el('span', 'ao-name', c.name || 'Unnamed');
+                    nm.title = c.name || '';
+                    p.appendChild(nm);
+                    podium.appendChild(p);
+                });
+                box.appendChild(podium);
             }
-            if (top.length) {
-                var b = document.createElement('div');
-                var mins = Math.max(1, Math.ceil((d.resetIn || 0) / 60000));
-                var left = mins >= 60 ? Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm' : mins + 'm';
-                b.className = 'ao-lead';
-                b.textContent = top[0].name + ' leads today with ' + (top[0].score | 0).toLocaleString('en-US') + ' points. The board resets in ' + left + '.';
-                box.appendChild(b);
-            }
-            holder.parentNode.insertBefore(box, holder.nextSibling);
+            box.hidden = false;
         }).catch(function () { });
     }
 
@@ -433,8 +436,6 @@
                 setTimeout(function () { toast.remove(); }, 300);
             }, 2600);
         }
-        var ytSoon = document.getElementById('ytSoon');
-        if (ytSoon) ytSoon.onclick = function () { showToast('There is no YouTube channel yet, but maybe soon!'); };
 
         // Regions with live servers get a count and are selectable. The first
         // live region is selected unless the player picked another live one.
@@ -766,25 +767,11 @@
                     '<span class="hdr-star">★</span><span>' + escHtml(name) + '</span>' + pbSub + '</span>';
             }).join('');
 
-            var pbHtml = '';
-            if (recs.length > 0) {
-                var topRecs = recs.map(function (r) {
-                    var kBit = r.kills > 0 ? ' · ' + r.kills + ' KO' + (r.kills === 1 ? '' : 's') : '';
-                    return '<span class="hdr-pill hdr-pill-pb">' +
-                        '<span class="hdr-pb-tank">' + escHtml(r.tank) + ':</span><span class="hdr-pb-val">' + r.score.toLocaleString('en-US') + ' pts' + escHtml(kBit) + '</span></span>';
-                }).join('');
-                pbHtml = '<div class="hdr-pb-sec">' +
-                    '<div class="hdr-head hdr-head-sub">Your Best Runs by Tank (' + recs.length + ')</div>' +
-                    '<div class="hdr-pills hdr-pills-scroll">' + topRecs + '</div>' +
-                    '</div>';
-            }
-
             box.removeAttribute('style');
             box.innerHTML =
                 '<div class="hdr-head">' +
                 'Today\'s Featured Tanks <span class="hdr-bonus">(+25% Bonus Pts)</span></div>' +
-                '<div class="hdr-pills">' + ftPills + '</div>' +
-                pbHtml;
+                '<div class="hdr-pills">' + ftPills + '</div>';
         }
         window.renderHomeDailyAndRecords = renderHomeDailyAndRecords;
         renderHomeDailyAndRecords();

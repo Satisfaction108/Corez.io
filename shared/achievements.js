@@ -98,12 +98,11 @@
         A('banking', 'hoarder',     'Hoarder',     'Carry 3,000 gems at once',             'sack', 3),
 
         // ---- Tanks ----
-        A('tanks', 'tank_t3',  'Big Guns',       'Reach a tier 3 tank',          'tank', 2, { track: 'tier', mode: 'max', goal: 2, solo: true }),
-        A('tanks', 'tank_t4',  'Final Form',     'Reach a tier 4 tank',          'tank', 3, { track: 'tier', mode: 'max', goal: 3, solo: true }),
-        A('tanks', 'tank_t5',  'Apex',           'Grow to 2x and reach a tier 5 tank', 'tank', 3, { track: 'tier', mode: 'max', goal: 4, solo: true }),
         A('tanks', 'tried_10', 'Test Driver',    'Try 10 different tanks',       'garage', 2, { track: 'tanks', mode: 'set', goal: 10 }),
         A('tanks', 'tried_25', 'Tank Collector', 'Try 25 different tanks',       'garage', 3, { track: 'tanks', mode: 'set', goal: 25 }),
+        A('tanks', 'tried_50', 'Fleet Commander', 'Try 50 different tanks',      'garage', 4, { track: 'tanks', mode: 'set', goal: 50 }),
         A('tanks', 'stat_max', 'Maxed Out',      'Max out a stat',               'stat', 2),
+        A('tanks', 'grow_15',  'Growing Up',     'Grow to 1.5x your size',       'grow', 2, { track: 'size', mode: 'max', goal: 150 }),
         A('tanks', 'grow_2',   'Heavyweight',    'Grow to twice your size',      'grow', 2, { track: 'size', mode: 'max', goal: 200 }),
         A('tanks', 'grow_4',   'Absolute Unit',  'Grow to four times your size', 'grow', 4, { track: 'size', mode: 'max', goal: 400 }),
 

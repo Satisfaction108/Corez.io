@@ -9,7 +9,7 @@ let raidOf = () => 0;
 function setRaidOf(fn) { if (typeof fn === 'function') raidOf = fn; }
 
 function cfg() { return typeof Config !== 'undefined' ? Config : {}; }
-function expanded() { return typeof Class !== 'undefined' && !!Class.xp_splitter; }
+function expanded() { return typeof Class !== 'undefined' && (!!Class.xp_splitter || cfg().armsrace_merge !== false); }
 function gated() { return T5_GROWTH > 1 && process.env.ROYALE_TANKS_T5_FREE !== '1'; }
 function active() {
     const C = cfg();

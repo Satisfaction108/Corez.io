@@ -8,7 +8,7 @@ const KINDS = {
     boss: { id: 'boss', name: 'Boss Hunt', ms: 240_000, verb: 'Hurt the boss and land the last hit.' },
     meteor: { id: 'meteor', name: 'Meteor Shower', ms: 100_000, verb: 'Grab the ore the meteors leave behind.' },
 };
-const ORDER = ['storm', 'core', 'rush', 'hill', 'boss', 'meteor'];
+const ORDER = ['storm', 'core', 'rush', 'boss'];
 const WARN_MS = 45_000;
 const GAP_MIN_MS = Math.round(2.5 * 60_000);
 const GAP_MAX_MS = Math.round(3.5 * 60_000);

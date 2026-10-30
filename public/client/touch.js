@@ -752,6 +752,7 @@ class TouchControls {
             if (this.move || this.aim) { this.move = null; this.aim = null; this.updateMove(); }
             if (!this.playing()) this.place = null;
             sock.cmd.set(4, false);
+            if (this.repel) sock.cmd.set(6, false);
             if (!this.armHeld || global.showChat) sock.cmd.set(7, false);
             return;
         }
@@ -787,6 +788,7 @@ class TouchControls {
         }
         if (now < this.tapFireUntil) firing = true;
         sock.cmd.set(4, firing);
+        sock.cmd.set(6, !!this.repel);
         const st = (global.shop && global.shop.state) || {};
         const armWanted = !!st.arm && (this.armHeld || (this.armOn && firing));
         sock.cmd.set(7, armWanted);
@@ -844,6 +846,33 @@ TouchControls.prototype.buildDom = function () {
     };
     document.body.appendChild(auto);
     this.autoBtn = auto;
+    const repel = document.createElement("button");
+    repel.id = "touchRepelBtn";
+    repel.type = "button";
+    repel.textContent = "Repel";
+    repel.setAttribute("aria-label", "Repel drones (right click)");
+    repel.onclick = () => {
+        repel.blur();
+        if (!this.cv || !this.playing()) return;
+        this.repel = !this.repel;
+        haptic("tap");
+    };
+    document.body.appendChild(repel);
+    this.repelBtn = repel;
+    const over = document.createElement("button");
+    over.id = "touchOverBtn";
+    over.type = "button";
+    over.textContent = "Override";
+    over.setAttribute("aria-label", "Override auto turrets and drones");
+    over.onclick = () => {
+        over.blur();
+        if (!this.cv || !this.playing()) return;
+        this.override = !this.override;
+        this.cv.socket.talk("t", 2, true);
+        haptic("tap");
+    };
+    document.body.appendChild(over);
+    this.overBtn = over;
     // duos: ping where you're aiming (or where you stand) for your partner
     const ping = document.createElement("button");
     ping.id = "touchPingBtn";
@@ -927,12 +956,16 @@ TouchControls.prototype.domTick = function () {
     // duos only, while you play (the death card and spectate bar need the space)
     setShow(this.pingBtn, !!(global.royale && global.royale.duos) && playing);
     // the server forgets auto-fire with the tank
-    if (!playing && global.died) this.autoFire = false;
+    if (!playing && global.died) { this.autoFire = false; this.repel = false; this.override = false; }
     setClass(this.autoBtn, "on", !!this.autoFire);
+    setShow(this.repelBtn, playing);
+    setShow(this.overBtn, playing);
+    setClass(this.repelBtn, "on", !!this.repel);
+    setClass(this.overBtn, "on", !!this.override);
     const vr = this.cv && this.cv.videoRecorder;
     const recOn = !!(vr && vr.state === "recording");
     // keep the stop button while recording, even on the death card
-    setShow(this.recBtn, playing || recOn);
+    setShow(this.recBtn, recOn);
     setClass(this.recBtn, "on", recOn);
     if (recOn) {
         const sec = Math.floor((performance.now() - (vr.startedAt || performance.now())) / 1000);

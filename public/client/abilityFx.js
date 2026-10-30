@@ -1066,7 +1066,12 @@ export function drawWorld(c, px, py, ratio) {
                 const cv = drawCloud(f, R, age, grow, out);
                 if (!cv) break;
                 c.globalAlpha = (inside ? 0.38 : 0.66) * fade;
+                const smoothWas = c.imageSmoothingEnabled, qualityWas = c.imageSmoothingQuality;
+                c.imageSmoothingEnabled = true;
+                c.imageSmoothingQuality = "high";
                 c.drawImage(cv, sx - cv._half, sy - cv._half, cv._half * 2, cv._half * 2);
+                c.imageSmoothingEnabled = smoothWas;
+                c.imageSmoothingQuality = qualityWas;
                 break;
             }
             case "unsmoke": {
@@ -1764,6 +1769,7 @@ function smokeSprite(kind) {
 // across (scaled up on screen past that). Three flat tones, each a union of
 // circles filled in one path, so the shape has no seams inside.
 const CLOUD_PX = 520;
+const CLOUD_PX_HD = 1280;
 const CLOUD_TONES = [
     { col: "#5d5d66", grow: 1.1, dx: 0, dy: 0 },          // outline
     { col: "#80808a", grow: 1, dx: 0, dy: 0 },            // shadow
@@ -1773,7 +1779,7 @@ function drawCloud(f, R, age, grow, out) {
     if (!(R > 1)) return null;
     const P = f.puffs, n = P.length / PUFF_W;
     const half = R * 1.45 * (1 + out * 0.3);
-    const k = Math.min(1, CLOUD_PX / (half * 2));
+    const k = Math.min(1, (fewer() ? CLOUD_PX : CLOUD_PX_HD) / (half * 2));
     const size = Math.ceil(half * 2 * k);
     let cv = f.cv, fresh = false;
     if (!cv) { cv = f.cv = document.createElement("canvas"); cv.width = cv.height = size; fresh = true; }

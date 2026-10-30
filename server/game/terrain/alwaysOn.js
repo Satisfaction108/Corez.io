@@ -9,7 +9,7 @@ function on() {
 let hooks = {};
 function attach(h) { hooks = h || {}; }
 function teamsOn() { return !!(global.Config && Config.royale_teams); }
-const TEAM_KINDS = ['core', 'rush', 'boss', 'meteor'];
+const TEAM_KINDS = ['core', 'rush', 'boss'];
 const MOTHER_LODE = { name: 'Mother Lode', verb: 'Crack the giant gem deposit in the middle. The team that does the most damage wins the battle.' };
 function kindInfo(kind) {
     const K = S.KINDS[kind];
@@ -180,7 +180,6 @@ function stormCenter(ev, t) {
     return { x: ev.x * k, y: ev.y * k };
 }
 function inRing(ev, b, t) {
-    if (Math.hypot(b.x, b.y) > ev.data.R0) return false;
     const c = stormCenter(ev, t);
     return Math.hypot(b.x - c.x, b.y - c.y) > stormRadius(ev, t);
 }
@@ -862,7 +861,7 @@ function doReset(t, forced = false) {
     }
     if (forced) daily.offset++;
     daily.day = dayNow(t);
-    if (ds && ds.available()) { try { ds.pruneBots(daily.day); } catch (e) { logErr('prune bots', e); } }
+    if (ds && ds.available()) { try { ds.pruneBots(oldDay); } catch (e) { logErr('prune bots', e); } }
     daily.champs = champs;
     daily.champsDay = oldDay;
     daily.saveAt = t;

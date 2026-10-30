@@ -59,9 +59,9 @@ const ABILITIES = [
     { id: "wall",    name: "Barricade",    price: 700,  cd: 18000, place: 600,
       desc: "Raises a wall of rock where you aim, almost instantly. It stands for 20 seconds." },
     { id: "smoke",   name: "Smoke Bomb",   price: 600,  cd: 14000, trial: true, place: 550,
-      desc: "Throws a smoke bomb up to 550m away that hides anyone inside the cloud for 11 seconds, boosts speed by 30%, and heals you." },
+      desc: "Throws a smoke bomb up to 550m away that hides anyone inside the cloud for 11 seconds, boosts speed by 15%, and heals you a little." },
     { id: "rush",    name: "Adrenaline",   price: 1000, cd: 40000, trial: true,
-      desc: "You fire 60% faster and move 30% faster for 10 seconds." },
+      desc: "You fire 20% faster and move 15% faster for 8 seconds." },
     { id: "pad",     name: "Launch Pad",   price: 600,  cd: 16000, trial: true, place: 600,
       desc: "Puts a pad where you aim that flings anyone who touches it. It lasts 30 seconds." },
 ];
@@ -89,14 +89,14 @@ const RADAR = { radius: 2500, ms: 10000, everyMs: 500, carrier: 400 };
 const WALL = { count: 5, ms: 20000, riseMs: 300, gapMs: 20 };
 // thrown (throwSpeed units per ms); the cloud hides anyone standing in it
 // for cloudMs, except while they shoot (the thrower gets graceMs first)
-const SMOKE = { ms: 11000, cloudMs: 11000, radius: 380, graceMs: 1400, throwSpeed: 1.35, speedMult: 1.3, healPerTick: 0.0025 };
-const RUSH = { ms: 10000, fire: 1.6, speed: 1.3 };
+const SMOKE = { ms: 11000, cloudMs: 11000, radius: 380, graceMs: 1400, throwSpeed: 1.35, speedMult: 1.15, healPerTick: 0.001 };
+const RUSH = { ms: 8000, fire: 1.2, speed: 1.15 };
 const PAD = { ms: 30000, armMs: 250, radius: 62, launchMs: 400, mult: 4.5, perOwner: 2, againMs: 900 };
 const PLACE_CLEAR = 46;     // a pad needs this much open ground under it
 const TRIAL_MS = 120000;
 
 // kit items that move you (shop.js sells them; the effects live here)
-const ROCKET = { ms: 7000, speed: 2.2 };
+const ROCKET = { ms: 5000, speed: 1.6 };
 const FLARE = { range: 420 };
 
 function now() { return Date.now(); }
@@ -629,7 +629,7 @@ const USES = {
     pad(body, tx, ty) {
         const P = placeAt(body, tx, ty, AB_BY_ID.get('pad').place);
         const why = padSpotWhy(P.x, P.y);
-        if (why === 'site') return { ok: false, msg: "Launch Pads can't go on vaults, shops, War Pads, Outposts or bases. Try open ground nearby." };
+        if (why === 'site') return { ok: false, msg: "Launch Pads can't go on vaults, shops, Outposts or bases. Try open ground nearby." };
         if (why) return { ok: false, msg: "There's no room for a pad there. Aim at open ground." };
         const t = now();
         const mine = pads.filter(p => p.owner === body);
@@ -997,13 +997,9 @@ function escapeFlare(body) {
         if (g.growingRocksHitByCircle) g.growingRocksHitByCircle(x, y, R, now(), flareHits);
         const blocked = flareHits.some(rock => rock && (rock.canyon || rock.ore === 4) && rock.alive);
         if (blocked) { flareHits.length = 0; continue; }
-        const gems = require('./gems.js');
         for (const rock of flareHits) {
             if (!rock) continue;
-            const wasGrowing = rock.growing;
-            if (g.damageRock(rock, rock.health + 1, x, y, false, body) && !wasGrowing && rock.ore) {
-                try { gems.spawnOreBurst(rock, body); } catch { /* */ }
-            }
+            g.damageRock(rock, rock.health + 1, x, y, false, body, true);
         }
         flareHits.length = 0;
         const ox = body.x, oy = body.y;
@@ -1073,7 +1069,6 @@ function tickBurrow(body, t) {
     const r = radiusOf(body);
     const vx = body.velocity.x, vy = body.velocity.y, v = Math.hypot(vx, vy);
     const ax = v > 0.5 ? vx / v : Math.cos(body.facing || 0), ay = v > 0.5 ? vy / v : Math.sin(body.facing || 0);
-    const gems = require('./gems.js');
     // clear two ticks of travel ahead, so the hull never touches a face (a
     // touch would kill its speed before the rock goes)
     const reach = r + Math.max(v, topSpeedOf(body)) * 2;
@@ -1083,11 +1078,7 @@ function tickBurrow(body, t) {
         if (g.growingRocksHitByCircle) g.growingRocksHitByCircle(x, y, R, t, burrowHits);
         for (const rock of burrowHits) {
             if (!rock || rock.canyon || rock.ore === 4) continue;   // emeralds still need shooting
-            const wasGrowing = rock.growing;
-            if (g.damageRock(rock, rock.health + 1, x, y, false, body)) {
-                body.rocksMined = (body.rocksMined || 0) + 1;
-                if (!wasGrowing && rock.ore) { body.gemsMined = (body.gemsMined || 0) + 1; try { gems.spawnOreBurst(rock, body); } catch { /* */ } }
-            }
+            if (g.damageRock(rock, rock.health + 1, x, y, false, body, true)) body.rocksMined = (body.rocksMined || 0) + 1;
         }
         burrowHits.length = 0;
     }

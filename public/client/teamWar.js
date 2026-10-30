@@ -38,7 +38,7 @@ export function myTeam() { const y = global.royale && global.royale.twy; return 
 function sinceRY() { return performance.now() - (global.royale.at || performance.now()); }
 export function teamHex(n) {
     if (A && A.teamHex) { const h = A.teamHex(n); if (h) return h; }
-    return n === L.BLUE ? "#00b2e1" : "#f14e54";
+    return n === L.BLUE ? "#3ca4cb" : "#e03e41";
 }
 function myHex() { return teamHex(myTeam() || L.BLUE); }
 
@@ -160,35 +160,33 @@ function channelFrac(ch) {
     return Math.max(0, Math.min(1, (+ch.p || 0) + sinceRY() / L.CHANNEL_MS));
 }
 
+const VOTE_ROWS = [
+    ["Radar Sweep", "See every enemy for 15 seconds"],
+    ["Supply Drop", "Two crates land in your base"],
+    ["Titan", "Marches on the enemy base"],
+];
+function poll() { const y = twy(); return y && y.poll ? y.poll : null; }
+function pollLeft(p) { return Math.max(0, Math.ceil((+p.left || 0) - sinceRY() / 1000)); }
 function tickPad() {
-    const y = twy();
-    const near = !global.died && nearMyPad();
-    const waiting = performance.now() - S.titanAskAt < 1500;
-    const now = performance.now();
-    if (S.wasNear && !near) {
-        S.leftAt = now;
-        if (channel() || waiting) { send(L.CALL_CANCEL); S.titanAskAt = -1e9; }
-    }
-    const serverSays = !!(y && y.pad) && now - S.leftAt > 900;
-    if (!near && !serverSays) S.dismissed = false;
-    S.wasNear = near;
-    S.padUp = !global.died && !global.showBigMap && !S.dismissed && (near || serverSays);
+    const p = poll();
+    if (!p || global.died) { S.padUp = false; S.mobileOpen = false; return; }
+    S.padUp = !global.showBigMap && (!global.mobile || !!S.mobileOpen);
 }
 export function padPanelUp() { return on() && S.padUp && !!S.panel; }
+function castVote(n) {
+    send(n);
+    S.myVote = n;
+    S.myVoteAt = performance.now();
+    if (global.mobile) S.mobileOpen = false;
+}
 
 export function key(e) {
-    if (!on() || !S.padUp || global.died) return false;
-    if (e.keyCode === 27) {
-        if (e.repeat) return true;
-        if (channel() || performance.now() - S.titanAskAt < 1500) { send(L.CALL_CANCEL); S.titanAskAt = -1e9; }
-        else { S.dismissed = true; try { gameSound.uiClick(); } catch (err) { void err; } }
-        return true;
-    }
+    if (!on() || !poll() || global.died || global.mobile) return false;
     const n = L.padKeyIndex(e, !!global.showChat);
-    if (n < 0) return false;
+    if (n < 1 || n > 3) return false;
     if (e.preventDefault) e.preventDefault();
     const b = S.buttons.find(o => o.n === n);
-    if (b && b.enabled && !channel()) send(n);
+    if (b && b.enabled) castVote(n);
     return true;
 }
 
@@ -196,15 +194,18 @@ function inRect(r, x, y) { return !!r && x >= r.x && x <= r.x + r.w && y >= r.y 
 export function hit(x, y) {
     if (!on()) return false;
     if (S.intro.state === "up" && inRect(S.intro.rect, x, y)) return true;
-    return S.padUp && inRect(S.panel, x, y);
+    return (S.padUp && inRect(S.panel, x, y)) || inRect(S.voteBtn, x, y);
 }
 export function click(x, y) {
     if (!on() || global.died) return false;
     if (S.intro.state === "up" && inRect(S.intro.rect, x, y)) { closeIntro(); return true; }
+    if (S.voteBtn && inRect(S.voteBtn, x, y)) {
+        S.mobileOpen = !S.mobileOpen;
+        try { gameSound.uiClick(); } catch (e) { void e; }
+        return true;
+    }
     if (!S.padUp || !inRect(S.panel, x, y)) return false;
-    if (S.cancelRect && inRect(S.cancelRect, x, y)) { send(L.CALL_CANCEL); S.titanAskAt = -1e9; return true; }
-    if (channel()) return true;
-    for (const b of S.buttons) if (b.enabled && inRect(b.rect, x, y)) { send(b.n); return true; }
+    for (const b of S.buttons) if (b.enabled && inRect(b.rect, x, y)) { castVote(b.n); return true; }
     return true;
 }
 
@@ -302,7 +303,8 @@ export function drawTopBar(c, cx, y, maxW) {
         A.hudPanel(c, pillX, py, pw, ph, { r: 4 });
         A.hudTitle(txt, pillX + pw / 2, py + ph / 2, 12, TEAL, "center");
     }
-    return y + H + HUD.lip + 8;
+    S.topBarBottom = y + H + HUD.lip + 8;
+    return S.topBarBottom;
 }
 
 function label(text, x, y, size, col, align) {
@@ -486,62 +488,93 @@ export function drawFloor(c, px, py, ratio) {
     }
 }
 
+function slideTo(cur, want, dt) { return cur + (want - cur) * (1 - Math.exp(-dt / 70)); }
+function easeOut(v) { const k = Math.max(0, Math.min(1, v)); return 1 - Math.pow(1 - k, 3); }
 export function drawPadPanel(c) {
-    S.panel = null; S.buttons = []; S.cancelRect = null;
-    if (!A || !on()) { S.padUp = false; return; }
+    S.panel = null; S.buttons = []; S.cancelRect = null; S.voteBtn = null;
+    if (!A || !on()) { S.padUp = false; S.slideP = 0; S.slideB = 0; return; }
     tickPad();
-    if (!S.padUp) return;
+    const now = performance.now();
+    const dt = S.slideAt ? Math.min(100, now - S.slideAt) : 16;
+    S.slideAt = now;
+    const live = poll();
+    const mobile = !!global.mobile;
+    const showBtn = mobile && !!live && !global.died;
+    const showPanel = !!live && S.padUp;
+    S.slideB = slideTo(S.slideB || 0, showBtn ? 1 : 0, dt);
+    S.slideP = slideTo(S.slideP || 0, showPanel ? 1 : 0, dt);
+    if (live) S.lastPoll = live;
+    const p = live || S.lastPoll;
+    if (!p || (S.slideB < 0.01 && S.slideP < 0.01)) return;
     const HUD = A.HUD;
-    const y0 = twy() || {};
     const me = myTeam() || L.BLUE;
     const col = teamHex(me);
     const sw = global.screenWidth, sh = global.screenHeight;
-    const mobile = !!global.mobile;
-    const W = Math.round(Math.min(380, sw - 24));
-    const gap = 8, bh = 46, headH = 30;
-    const ch = channel();
-    const H = headH + (ch ? 70 : bh * 2 + gap) + 12;
-    const x = Math.round((sw - W) / 2);
-    const y = Math.round(sh - (mobile ? 330 : 350));
-    S.panel = { x, y, w: W, h: H };
-    A.hudPanel(c, x, y, W, H, { fill: HUD.card, r: 10 });
+    const mine = S.myVote && now - S.myVoteAt < 1500 ? S.myVote : (p.m | 0);
+    const left = pollLeft(p);
+    let btnRect = null;
+    if (mobile) {
+        const eb = easeOut(S.slideB);
+        const bw = 112, bh = 34;
+        const bx = Math.round((sw - bw) / 2), by0 = Math.round(S.topBarBottom || 96);
+        const by = Math.round(by0 - (1 - eb) * (bh + by0));
+        btnRect = { x: bx, y: by0, w: bw, h: bh };
+        if (eb > 0.01) {
+            c.save();
+            c.globalAlpha *= eb;
+            A.hudPanel(c, bx, by, bw, bh, { fill: mine ? HUD.card : col, r: 8 });
+            if (!mine) {
+                A.rr(c, bx + 1, by + 1, bw - 2, bh - 2, 7);
+                c.globalAlpha *= 0.5 + 0.4 * Math.sin(now / 180);
+                c.strokeStyle = HUD.gold; c.lineWidth = 2.5; c.stroke();
+            }
+            c.restore();
+            A.hudTitle(mine ? "Voted" : "Vote " + left + "s", bx + bw / 2, by + bh / 2, 14, mine ? HUD.head : "#ffffff", "center", eb);
+        }
+        if (showBtn) {
+            S.voteBtn = btnRect;
+            if (A.touchRect) A.touchRect(S.voteBtn);
+        }
+    }
+    const ep = easeOut(S.slideP);
+    if (ep < 0.01) return;
+    const chat = global.dwChatRect;
+    const W = mobile ? Math.round(Math.min(300, sw - 24)) : Math.round(Math.max(220, Math.min(300, chat ? chat.w : 260)));
+    const rowH = 40, gap = 6, headH = 28;
+    const H = headH + VOTE_ROWS.length * rowH + (VOTE_ROWS.length - 1) * gap + 12;
+    let x, y;
+    if (mobile) { x = Math.round((sw - W) / 2); y = (btnRect ? btnRect.y + btnRect.h : 96) + 8; }
+    else if (chat) { x = Math.round(chat.x + chat.w - W); y = Math.round(chat.y + chat.h + 8); }
+    else { x = Math.round(sw - W - 12); y = Math.round(sh * 0.4); }
+    if (y + H > sh - 8) y = Math.round(sh - 8 - H);
+    const restX = x, restY = y;
+    if (mobile) y = Math.round(y - (1 - ep) * 40);
+    else x = Math.round(x + (1 - ep) * (sw - x + 12));
+    if (showPanel) S.panel = { x: restX, y: restY, w: W, h: H };
     c.save();
+    c.globalAlpha *= mobile ? ep : Math.min(1, ep * 1.4);
+    A.hudPanel(c, x, y, W, H, { fill: HUD.card, r: 10 });
     A.rr(c, x + 1.5, y + 1.5, W - 3, H - 3, 9);
     c.strokeStyle = col; c.lineWidth = 2.5; c.stroke();
-    c.restore();
-    titanGlyph(c, x + 20, y + headH / 2 + 2, 8, col, HUD.ink);
-    A.hudTitle("War Pad", x + 34, y + headH / 2 + 2, 17, HUD.head, "left");
-    const t = tw();
-    const mi = me === L.RED ? 1 : 0;
-    const frac = Math.max(0, Math.min(1, +(t.w && t.w[mi]) || 0));
-    const tcd = titanCd();
-    A.drawText(L.meterLine(frac, !!y0.tOut, tcd), x + W - 14, y + headH / 2 + 2, 11.5, L.titanReady(frac, !!y0.tOut, tcd) ? HUD.gold : HUD.text2, "right", true);
-    const by = y + headH + 4;
+    titanGlyph(c, x + 18, y + headH / 2 + 2, 7, col, HUD.ink);
+    A.hudTitle("Team Vote", x + 30, y + headH / 2 + 2, 15, HUD.head, "left");
+    A.drawText(left + "s", x + W - 12, y + headH / 2 + 2, 11.5, HUD.text2, "right", true);
     const mouse = A.mouseGui ? A.mouseGui() : null;
-    if (ch) {
-        const f = channelFrac(ch);
-        A.hudTitle("Calling the Titan...", x + W / 2, by + 12, 16, HUD.gold, "center");
-        A.hudBar(c, x + 16, by + 26, W - 32, 10, f, HUD.gold);
-        const cw = 92, chh = 24, cxb = x + W - 16 - cw, cyb = by + 42;
-        A.drawText(L.laneLine(ch.l) + (mobile ? "" : ". Esc cancels."), x + 16, cyb + chh / 2, 11.5, HUD.text2, "left", true);
-        S.cancelRect = { x: cxb, y: cyb, w: cw, h: chh };
-        const hov = mouse && inRect(S.cancelRect, mouse.x, mouse.y);
-        drawButton(c, S.cancelRect, "Cancel", "", true, hov, HUD.face, HUD.head, null);
-    } else {
-        const list = L.callButtons(y0, sinceRY());
-        const bw = (W - 16 * 2 - gap) / 2;
-        S.hover = -1;
-        list.forEach((b, i) => {
-            const rx = x + 16 + (i % 2) * (bw + gap), ry = by + Math.floor(i / 2) * (bh + gap);
-            b.rect = { x: rx, y: ry, w: bw, h: bh };
-            const hov = !!(mouse && b.enabled && inRect(b.rect, mouse.x, mouse.y));
-            if (hov) S.hover = i;
-            const titan = b.n >= L.CALL_TITAN_MIDDLE;
-            drawButton(c, b.rect, b.label, b.sub, b.enabled, hov, b.enabled ? (titan ? col : HUD.face) : HUD.face, b.enabled && titan ? "#ffffff" : HUD.head, mobile ? null : "Shift+" + b.n);
-            S.buttons.push(b);
-        });
-    }
-    if (mobile && A.touchRect) A.touchRect(S.panel);
+    S.hover = -1;
+    VOTE_ROWS.forEach(([name, sub], i) => {
+        const n = i + 1;
+        const enabled = !!(p.o && p.o[i]);
+        const votes = (p.n && p.n[i]) | 0;
+        const rect = { x: x + 10, y: y + headH + 4 + i * (rowH + gap), w: W - 20, h: rowH };
+        const hov = !!(showPanel && mouse && enabled && inRect(rect, mouse.x, mouse.y));
+        if (hov) S.hover = i;
+        const picked = mine === n;
+        const text = name + (votes ? " (" + votes + ")" : "");
+        drawButton(c, rect, text, enabled ? sub : "Out or cooling down", enabled, hov, picked ? col : HUD.face, picked ? "#ffffff" : HUD.head, mobile ? null : "Shift+" + n);
+        if (showPanel) S.buttons.push({ n, enabled, rect: { x: restX + 10, y: rect.y - y + restY, w: rect.w, h: rect.h } });
+    });
+    c.restore();
+    if (mobile && showPanel && A.touchRect) A.touchRect(S.panel);
 }
 
 function drawButton(c, r, label, sub, enabled, hover, fill, ink, keyCap) {
@@ -566,7 +599,7 @@ function drawButton(c, r, label, sub, enabled, hover, fill, ink, keyCap) {
     if (keyCap && A.hudKey) A.hudKey(c, r.x + r.w - 6 - kw, r.y + 5, keyCap, 15, a);
 }
 
-export function avoidRect() { return S.padUp && S.panel ? S.panel : null; }
+export function avoidRect() { return S.panel || S.voteBtn || null; }
 
 export function drawMapUnder(c, T, inside) {
     if (!on()) return;

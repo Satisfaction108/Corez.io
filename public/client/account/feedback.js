@@ -201,7 +201,7 @@ function openModal() {
 
     const m = ui.modal({
         title: 'Send feedback',
-        message: 'Tell us about bugs, ideas or balance. It goes straight to the dev.',
+        message: 'Let us know about any balances, changes, or bugs in game! Everything is welcome (except spamming).',
         body: form,
         cls: 'fb-modal',
         focus: '.fb-text',

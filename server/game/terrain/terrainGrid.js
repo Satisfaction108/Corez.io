@@ -3,7 +3,7 @@ const CELL = { BASALT: 0, EMPTY: 1 };
 const { basePolygonHealth } = require('../../lib/definitions/constants.js');
 
 const ROCK_DAMAGE_BASE = 0.75 * 0.7 * 0.75 * 562.5 * basePolygonHealth;
-const ROCK_TOUGHNESS = 1.15;
+const ROCK_TOUGHNESS = 0.55;
 const ROCK_HEALTH = ROCK_TOUGHNESS * ROCK_DAMAGE_BASE;
 
 const ORE = { NONE: 0, COPPER: 1, VEIN: 2, SHARD: 3, EMERALD: 4 };
@@ -17,7 +17,7 @@ const ORE_HP = { [ORE.NONE]: 1, [ORE.COPPER]: 1.5, [ORE.VEIN]: 1.85,
 // stacked its mining is (an emerald always takes at least 7 hits).
 const ORE_HIT_CAP = { [ORE.COPPER]: 0.5, [ORE.VEIN]: 0.5, [ORE.SHARD]: 0.34, [ORE.EMERALD]: 0.15 };
 // Any one tank (its bullets and drones included) breaks at most this many rocks a second.
-const ROCK_BREAKS_PER_SEC = 6;
+const ROCK_BREAKS_PER_SEC = 3;
 
 // Mirrored on the client: terrainRenderer.js GROW_MS / GROW_SCALE0.
 const GROW_TIMELINE_MS = 16_000;
@@ -68,6 +68,9 @@ const REGROW = {
     EMERALD_PENDING_MAX:    48,
     EMERALD_PLANTS_PER_PASS: 4,
     EMERALD_GAP:             6,
+    QUEUE_GAP_MS:        2_000,
+    QUEUE_MAX_MISSING:      50,
+    QUEUE_MIN_DEAD_MS:   1_000,
     REGROW_SLICE:          800,
     REGROW_SLICE_TICK_MS:   33,
     EVENT_MERGE_LOOKBACK:   64,
@@ -1253,7 +1256,7 @@ class TerrainGrid {
 
         const keys = [];
         for (const k of this.rocks.keys()) keys.push(k);
-        this._rg = { keys, i: 0, gap0: 0, gap1: 0, pass: 0, tankIndex: null, orphans: this._orphanRegrowOn() };
+        this._rg = { keys, i: 0, gap0: 0, gap1: 0, pass: 0, tankIndex: null, orphans: this._orphanRegrowOn(), missing: 0, cands: [] };
         this._regrowSlice(now, budget);
     }
 
@@ -1286,24 +1289,25 @@ class TerrainGrid {
                     continue;
                 }
                 if (rock.alive || rock.growing || !rock.diedAt || !rock.worldPoly) continue;
-                const side = this._sideOf(rock);
-                const delay = side === -1
-                    ? Math.min(this._regrowDelay[0], this._regrowDelay[1])
-                    : this._regrowDelay[side];
                 let bloomRock = false;
                 if (Config.dig_royale) {
                     const bl = this._bloomNow || null;
                     if (bl && ((rock.wx - bl.x) ** 2 + (rock.wy - bl.y) ** 2) <= bl.r * bl.r) bloomRock = true;
                 }
-                if (now - rock.diedAt < (bloomRock ? REGROW.BLOOM_DELAY_MS : delay) / (rock.regrowBoost || 1)) continue;
+                if (bloomRock) {
+                    if (now - rock.diedAt < REGROW.BLOOM_DELAY_MS) continue;
+                    if (!rg.tankIndex) rg.tankIndex = this._tankIndex();
+                    if (this._tankOnCell(rg.tankIndex, rock)) continue;
+                    this.startRegrow(rock, now, REGROW.GROW_MS * REGROW.BLOOM_START);
+                    continue;
+                }
+                rg.missing++;
+                if (now - rock.diedAt < REGROW.QUEUE_MIN_DEAD_MS) continue;
                 if (rock.noRegrowUntil && now < rock.noRegrowUntil) continue;
                 if (this._inNoRegrowZone(rock, now)) continue;
-                if (!bloomRock && !this._hasLivingNeighbour(rock)) {
-                    if (!rg.orphans || now - rock.diedAt < REGROW.ORPHAN_DELAY_MS || this._hasGrowingNeighbour(rock)) continue;
-                }
                 if (!rg.tankIndex) rg.tankIndex = this._tankIndex();
                 if (this._tankOnCell(rg.tankIndex, rock)) continue;
-                this.startRegrow(rock, now, bloomRock ? REGROW.GROW_MS * REGROW.BLOOM_START : 0);
+                rg.cands.push(rock);
             }
             budget -= rg.i - start;
             if (rg.i < rg.keys.length) return;
@@ -1317,11 +1321,26 @@ class TerrainGrid {
                 rg.i = 0;
                 continue;
             }
+            this._regrowFromQueue(now, rg);
             this._rg = null;
             if (this._pendingEmeralds.length && now - (this._emeraldTickAt || 0) > 2000) {
                 this._emeraldTickAt = now;
                 this._tickEmeraldRespawns(now);
             }
+        }
+    }
+
+    _regrowFromQueue(now, rg) {
+        const cands = rg.cands.sort((x, y) => x.diedAt - y.diedAt);
+        let missing = rg.missing, next = 0;
+        if (cands.length && now - (this._queueGrowAt || 0) >= REGROW.QUEUE_GAP_MS) {
+            this.startRegrow(cands[next++], now, 0);
+            this._queueGrowAt = now;
+            missing--;
+        }
+        while (missing > REGROW.QUEUE_MAX_MISSING && next < cands.length) {
+            this.startRegrow(cands[next++], now, 0);
+            missing--;
         }
     }
 

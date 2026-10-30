@@ -13,7 +13,7 @@ const BASE_TILES = {
 const BLUE_SITES = {
     bank: { x: -3360, y: 0 },
     pad: { x: -2560, y: -380 },
-    shop: { x: -2560, y: 380 },
+    shop: { x: -2560, y: 0 },
     eye: { x: -2100, y: 0 },
     tail: { x: 2560, y: -2330 },
     mouth: { x: -2700, y: 0 },
@@ -172,7 +172,7 @@ function supplySpots(team) {
 }
 
 function warPads() {
-    return TEAMS.map(t => ({ team: t, ...sitesFor(t).pad, r: PAD_R }));
+    return [];
 }
 
 module.exports = {

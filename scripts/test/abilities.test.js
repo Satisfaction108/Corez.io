@@ -755,15 +755,15 @@ test('hints: tooltips draw after the upgrade tiles; on touch a long press shows 
     assert.match(fxSrc, /unlockSeen\("tip:" \+ S\.eq\)/, 'first ability in the slot on a phone: its tooltip once');
 });
 
-test('adrenaline: 10 s faster, faster reload, then back', () => {
+test('adrenaline: 8 s faster, faster reload, then back', () => {
     const { s, t } = owner(AX, AY, 'rush');
     const sp0 = t.topSpeed;
     assert.ok(ab.use(t, 0, 0));
     assert.ok(Math.abs(t.topSpeed / sp0 - ab.RUSH.speed) < 0.01, 'speed x' + (t.topSpeed / sp0).toFixed(2));
     assert.equal(ab.fireMult(t), ab.RUSH.fire);
-    assert.equal(ab.RUSH.ms, 10000);
+    assert.equal(ab.RUSH.ms, 8000);
     const gunSrc = fs.readFileSync(path.join(SERVER, 'game', 'entities', 'gun.js'), 'utf8');
-    assert.match(gunSrc, /rushUntil && Date\.now\(\) < this\.body\.rushUntil\) \? 1\.6/);
+    assert.match(gunSrc, /rushUntil && Date\.now\(\) < this\.body\.rushUntil\) \? 1\.2/);
     clock += ab.RUSH.ms + 50;
     step(1);
     assert.ok(Math.abs(t.topSpeed - sp0) < 0.01, 'back to normal');
@@ -882,12 +882,13 @@ test('bots: giveBot, canUse, use with a placement target, same cooldowns', () =>
 });
 
 // ── shop ────────────────────────────────────────────────────────────────
-test('shop: the new shelves (4 gear with the magnet back plus the Stat Point, mobility kit, 8 abilities, nothing retired)', () => {
+test('shop: the shelves (4 gear, mobility kit, 7 abilities; the OP items retired)', () => {
     const cat = shop.catalog();
     const ids = cat.map(i => i.id);
     for (const gone of ['cloak', 'boots', 'plating', 'express', 'mark', 'wind', 'strut', 'overdrive']) assert.ok(!ids.includes(gone), gone + ' retired');
-    assert.equal(cat.filter(i => i.cat === 'gear').length, 5);
-    for (const keep of ['statpt', 'scanner', 'magnet', 'insurance', 'satchel', 'charge', 'medkit', 'flash', 'barrage', 'decoy', 'bulwark', 'rocket', 'flare', 'flak', 'lance', 'pod']) assert.ok(ids.includes(keep), keep);
+    assert.equal(cat.filter(i => i.cat === 'gear').length, 4);
+    for (const keep of ['scanner', 'magnet', 'insurance', 'satchel', 'medkit', 'flash', 'decoy', 'bulwark', 'rocket', 'flare']) assert.ok(ids.includes(keep), keep);
+    for (const gone of ['statpt', 'charge', 'barrage', 'flak', 'lance', 'pod']) assert.ok(!ids.includes(gone), gone + ' retired');
     const abil = cat.filter(i => i.cat === 'ability');
     assert.equal(abil.length, 7);
     assert.ok(!ids.includes('radar'), 'radar retired');
@@ -945,12 +946,12 @@ test('shop: retired items cannot be bought; Rocket Boots and Escape Flare work',
     const sp0 = t.topSpeed;
     const st = shop.stateOf(s);
     assert.ok(shop.useKit(s, st.kitOrder.indexOf('rocket'), 0, 0));
-    assert.ok(t.topSpeed > sp0 * 2, 'rocket boots: ' + (t.topSpeed / sp0).toFixed(2) + 'x');
-    assert.ok(ab.ROCKET.ms >= 6000 && ab.ROCKET.ms <= 8000, 'they last ' + ab.ROCKET.ms);
+    assert.ok(t.topSpeed > sp0 * 1.5, 'rocket boots: ' + (t.topSpeed / sp0).toFixed(2) + 'x');
+    assert.ok(ab.ROCKET.ms >= 4000 && ab.ROCKET.ms <= 6000, 'they last ' + ab.ROCKET.ms);
     assert.ok(s.packets.some(p => p[0] === 'AF' && p[1] === 'rocket' && p[5] === ab.ROCKET.ms), 'flames for the whole burn');
     clock += ab.ROCKET.ms - 1000;
     step(1);
-    assert.ok(t.topSpeed > sp0 * 2, 'still lit near the end');
+    assert.ok(t.topSpeed > sp0 * 1.5, 'still lit near the end');
     clock += 1100;
     step(1);
     assert.ok(Math.abs(t.topSpeed - sp0) < 0.01, 'and they burn out');
@@ -1316,51 +1317,51 @@ test('rearranging: kit slots swap on the server (validated), the keys follow; th
     const s = mkSocket();
     const t = tank(AX, AY, s);
     const st = shop.stateOf(s);
-    shop.grantKit(s, 'medkit'); shop.grantKit(s, 'charge');
-    assert.deepEqual(st.kitOrder, ['medkit', 'charge']);
+    shop.grantKit(s, 'medkit'); shop.grantKit(s, 'bulwark');
+    assert.deepEqual(st.kitOrder, ['medkit', 'bulwark']);
     assert.ok(shop.swapKit(s, 0, 1));
-    assert.deepEqual(st.kitOrder, ['charge', 'medkit'], 'swapped');
-    assert.deepEqual(JSON.parse(s.packets.filter(p => p[0] === 'SHP').pop()[1]).kitOrder, ['charge', 'medkit'], 'the client hears it');
+    assert.deepEqual(st.kitOrder, ['bulwark', 'medkit'], 'swapped');
+    assert.deepEqual(JSON.parse(s.packets.filter(p => p[0] === 'SHP').pop()[1]).kitOrder, ['bulwark', 'medkit'], 'the client hears it');
     // onto the empty third slot: it stays there, leaving a hole
     assert.ok(shop.swapKit(s, 0, 2));
-    assert.deepEqual(st.kitOrder, [null, 'medkit', 'charge'], 'moved into slot 3');
+    assert.deepEqual(st.kitOrder, [null, 'medkit', 'bulwark'], 'moved into slot 3');
     // bad requests change nothing (an empty slot can't be dragged)
     for (const [a, b] of [[0, 1], [1, 1], [-1, 1], [1, 3], [0.5, 1], ['1', 2], [1, 9]]) {
         assert.equal(shop.swapKit(s, a, b), false, 'refused ' + a + ' -> ' + b);
-        assert.deepEqual(st.kitOrder, [null, 'medkit', 'charge']);
+        assert.deepEqual(st.kitOrder, [null, 'medkit', 'bulwark']);
     }
     // keys follow the slot: key 1 is empty, key 2 the medkit
     st.kit.medkit = 1;
     t.health.amount = t.health.max * 0.3;
     assert.equal(shop.useKit(s, 0, AX, AY), false, 'slot 1 is empty');
     assert.ok(shop.useKit(s, 1, AX, AY), 'slot 2 is the medkit');
-    assert.ok(t.health.amount > t.health.max * 0.6);
-    assert.deepEqual(st.kitOrder, [null, null, 'charge'], 'used up: its slot empties, the charge stays put');
+    assert.ok(t.health.amount > t.health.max * 0.45);
+    assert.deepEqual(st.kitOrder, [null, null, 'bulwark'], 'used up: its slot empties, the charge stays put');
     // something new fills the first empty slot
     shop.grantKit(s, 'anchor');
-    assert.deepEqual(st.kitOrder, ['anchor', null, 'charge']);
+    assert.deepEqual(st.kitOrder, ['anchor', null, 'bulwark']);
     shop.grantKit(s, 'flash');
-    assert.deepEqual(st.kitOrder, ['anchor', 'flash', 'charge']);
+    assert.deepEqual(st.kitOrder, ['anchor', 'flash', 'bulwark']);
     assert.equal(shop.grantKit(s, 'decoy'), false, 'three kinds: full');
     // a hole at the end is trimmed, a hole in the middle stays through normalising
     assert.ok(shop.dropKit(s, 1));
-    assert.deepEqual(shop.stateOf(s).kitOrder, ['anchor', null, 'charge']);
+    assert.deepEqual(shop.stateOf(s).kitOrder, ['anchor', null, 'bulwark']);
     // a save keeps the slots, holes included
     const rec = saveCodes.shopRecord(s, clock);
-    assert.deepEqual(rec.kitOrder, ['anchor', null, 'charge'], 'saved as arranged');
+    assert.deepEqual(rec.kitOrder, ['anchor', null, 'bulwark'], 'saved as arranged');
     const s2 = mkSocket();
     const t2 = tank(AX + 300, AY, s2);
     saveCodes.applyShop(s2, t2, rec, clock);
-    assert.deepEqual(shop.stateOf(s2).kitOrder.slice(0, 3), ['anchor', null, 'charge'], 'restored into the same slots');
+    assert.deepEqual(shop.stateOf(s2).kitOrder.slice(0, 3), ['anchor', null, 'bulwark'], 'restored into the same slots');
     // a use names the item it SHOWED: a slot index from before a swap
     // landed still fires that item, never its neighbour
     const sk = shop.stateOf(s);
-    sk.kit.charge = 2;
-    assert.deepEqual(sk.kitOrder, ['anchor', null, 'charge']);
+    sk.kit.bulwark = 2;
+    assert.deepEqual(sk.kitOrder, ['anchor', null, 'bulwark']);
     s.packets.length = 0;
     clock += 1000;       // past the kit's half-second lockout
-    assert.ok(shop.useKit(s, 0, AX + 200, AY, 'charge'), 'stale slot 1, but the charge was pressed');
-    assert.equal(sk.kit.charge, 1, 'the charge fired');
+    assert.ok(shop.useKit(s, 0, AX + 200, AY, 'bulwark'), 'stale slot 1, but the charge was pressed');
+    assert.equal(sk.kit.bulwark, 1, 'the charge fired');
     assert.ok(sk.kit.anchor > 0, 'not the anchor in slot 1');
     assert.equal(shop.useKit(s, 1, AX, AY, 'medkit'), false, 'an item you no longer have does nothing');
     const cvSrc = fs.readFileSync(path.join(REPO, 'public', 'client', 'canvas.js'), 'utf8');

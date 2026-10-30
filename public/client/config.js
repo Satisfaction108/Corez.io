@@ -1,6 +1,6 @@
 const config = {
     graphical: {
-        borderChunk: 7.5,
+        borderChunk: 6,
         barChunk: 5,
         mininumBorderChunk: 0.5,
         deathBlurAmount: 3,

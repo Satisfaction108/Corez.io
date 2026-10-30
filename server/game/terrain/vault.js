@@ -375,6 +375,13 @@ function tick(actors, dtMs) {
             if (v.team !== body.team && (!Config.dig_royale || v.team)) continue;
             if (onPadShape(v, body.x - v.x, body.y - v.y)) { pad = v; break; }
         }
+        if (Config.royale_teams && !pad) {
+            const br = (body.realSize || 60) * 0.5;
+            for (const v of list) {
+                if (!v.team || v.team === body.team) continue;
+                if (onPadShape(v, body.x - v.x, body.y - v.y, br)) { padGeom.keepOut(body, v, 6, vaultKey(v), true); break; }
+            }
+        }
         // bank cover (fairPlay.js): slightly softer shots while banking and just after
         if (Config.dig_royale) {
             try { fairPlay().bankStamp(body, body.vaultDeposit ? (body._vaultSite || pad) : null, now, list); } catch { /* */ }
@@ -474,7 +481,7 @@ function tick(actors, dtMs) {
         if (Config.dig_royale) { try { dustHooks().onSatchelOut(body, chunk, carriedBefore, 1); } catch { /* */ } }
         const banked = body.socket ? (body.socket.gemBanked || 0) : (body.botBanked || 0);
         // deep pockets pays a premium at the vault
-        const bankMult = (global.royaleMods && global.royaleMods.bankMult) || 1;
+        const bankMult = 1;
         const credit = chunk * bankMult;
         // the twist's premium gets its own labelled pop when the deposit ends
         if (bankMult !== 1) { d.premium = (d.premium || 0) + (credit - chunk); d.premiumMult = bankMult; }

@@ -4414,7 +4414,7 @@ import './cinematic.js';
     }
     function teamBaseHex(t) {
         const h = gameDraw.getColor(t === 2 ? "red" : "blue");
-        return typeof h === "string" && h[0] === "#" ? h : t === 2 ? "#f14e54" : "#00b2e1";
+        return typeof h === "string" && h[0] === "#" ? h : t === 2 ? "#e03e41" : "#3ca4cb";
     }
     function teamBaseRects() {
         const tw = global.royale && global.royale.tw;
@@ -4448,15 +4448,9 @@ import './cinematic.js';
             if (x1 < -lw || y1 < -lw || x0 > sw + lw || y0 > sh + lw) continue;
             const hex = teamBaseHex(b.t | 0);
             c.save();
-            roundRectPath(c, x0, y0, x1 - x0, y1 - y0, TEAM_BASE_CORNER * ratio);
-            c.globalAlpha = worldDark ? 0.16 : 0.22;
+            c.globalAlpha = worldDark ? 0.22 : 0.32;
             c.fillStyle = hex;
-            c.fill();
-            c.globalAlpha = worldDark ? 0.75 : 0.85;
-            c.lineWidth = lw;
-            c.lineJoin = "round";
-            c.strokeStyle = worldMix(hex, worldDark ? -0.1 : -0.15);
-            c.stroke();
+            c.fillRect(x0, y0, x1 - x0, y1 - y0);
             c.restore();
         }
     }
@@ -9314,6 +9308,7 @@ import './cinematic.js';
     }
     function drawChatPanel() {
         chatPanelRect = null;
+        global.dwChatRect = null;
         const cv = global.canvas;
         const open = !!(global.showChat && cv && cv.chatInput);
         if (!open && !global.mobile && gatePanel() <= 0) return;
@@ -9400,6 +9395,7 @@ import './cinematic.js';
         if (global.died && !open && deathCardUp() && dc && x < (dc.x + dc.w) * sw && x + W > dc.x * sw && y < (dc.y + dc.h) * sh && y + H > dc.y * sh) { chatInputHide(); return; }
         const c = ctx[2];
         chatPanelRect = { x: x - 6, y: y - 6, w: W + 12, h: H + 12 };
+        global.dwChatRect = chatPanelRect;
         hudPanel(c, x, y, W, H, { alpha: A, fill: open ? HUD.card : HUD.panel, r: HUD.r });
         // the lines, oldest first
         let ly = y + CHAT_PAD_Y + lh / 2;
@@ -12275,7 +12271,7 @@ import './cinematic.js';
             const c = gameDraw.getColor(gui.color);
             if (typeof c === "string" && c.length) return c;
         } catch (e) {  }
-        return "#00b2e1";
+        return "#3ca4cb";
     }
 
     let mapPaths = null, mapChunks = null;
@@ -15460,7 +15456,7 @@ import './cinematic.js';
             try { updateRoyaleDomButtons(); } catch { /* */ }
             drawRoyaleBoard();
             drawMessages(spacing, alcoveSize);
-            drawMilestones();
+            if (!global.mobile) drawMilestones();
             drawEventCallout();
             drawWarBanner();
             // the raid-end finale takes the whole screen: the winner's own HUD steps aside
@@ -15470,7 +15466,6 @@ import './cinematic.js';
                 // the death card covers the middle: your name and wallet row under it only leaked
                 if (!deathScreenOn()) drawSelfInfo(max);
                 drawGemPopups();   // +N numbers + pickup ring over the tank
-                drawMineCombo();    // mining chain meter under the tank
                 drawKitBox(spacing, alcoveSize);
                 drawAbilityBar();
                 try { drawRaidPerks(); } catch (e) { /* never break the frame */ }

@@ -131,10 +131,3 @@ document.addEventListener("click", (e) => {
     replay();
 });
 
-function playOnOpen() {
-    if (!wanted()) return;
-    if (/[?&]team=/.test(location.search)) return;
-    play();
-}
-if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", playOnOpen, { once: true });
-else setTimeout(playOnOpen, 0);
