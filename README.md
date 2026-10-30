@@ -28,11 +28,11 @@ Other features:
 
 ## Accounts
 
-You can play as a guest. If you make an account using Discord or username you will save your progress. This includes your level, rank, gemdust and skins. Gemdust can be earned by playing and used in the Item Shop. This changes every day. Friends, daily quests, achievements and a ranked leaderboard (Bronze - Legend) are all available.
+You can play as a guest. If you make an account using Discord or username you will save your progress and also be able to buy stuff like sidekicks, skins, and namestyles!!! Gemdust can be earned by playing and can be used in the Item Shop. The item shop rotates everyday so you can get to have a chance at buying pretty much all the stuff. Friends, daily quests, achievements and a ranked leaderboard (Bronze - Legend) are also available to see how you compete with others.
 
 ## Hosting
 
-To run you will need Node.js 22.13 or above. The account system uses Node's built in SQLite so older versions won't work.
+To run you will need Node.js 22.13 or above as the account system uses Node's built in SQLite so older versions won't work.
 
 Install dependencies:
 
@@ -46,17 +46,11 @@ Run:
 npm start
 ```
 
-Go to http://localhost:3000.
+Go to http://localhost:3000 (or whatever port it says, depending on if a port is not available)
 
-Config for the game can be found in `server/config.js`. Secrets can be stored in `server/.env`. All options are listed in `server/.env.example`. You do not need to have a `.env` file. If you don't then everyone will play as a guest.
+Config for the game can be found in `server/config.js` and secrets can be stored in `server/.env`. All options are listed in `server/.env.example`, though you dont need to have a `.env` file. If you don't then everyone will be forced to play as a guest.
 
-When running locally you will load the un-obfuscated code from `public/client`. When running in production (`NODE_ENV=production`) you will load the obfuscated code from `build/public`. This can be built using `npm run build`. This can also be done using `scripts/deploy.sh`. If you want to test the obfuscated code locally then set `CLIENT_BUILD=obfuscated`. Only edit files inside `public/client`. The contents of `build/` will be rebuilt and not committed.
-
-Some useful environment variables:
-
-- `ROYALE_MODES` - This will determine the modes to cycle through. Default is `2tdm,ffa`. If you only set 1 mode then it will always run on that mode.
-- `ROYALE_MODE_MIN` - Sets how long each mode should run for. Default is 1440 (1 day).
-- `ROYALE_ARMS_RACE=1` - Enables the Arms Race tank tree.
+When running locally you will load the un-obfuscated code from `public/client`. When running in production (`NODE_ENV=production`) you will load the obfuscated code from `build/public`. This can be built using `npm run build` or be done using `scripts/deploy.sh`. If you want to test the obfuscated code locally then set `CLIENT_BUILD=obfuscated`, but only edit files inside `public/client` and the contents of `build/` will be rebuilt and not committed.
 
 ## Files
 
@@ -71,11 +65,10 @@ Some useful environment variables:
 - Game rendering and HUD: `public/client/app.js`.
 - Menu screens: `public/client/account/`.
 - Update notes: `public/changelog.md`.
-- Testing scripts: `scripts/test/`. Run each script individually. For example `node scripts/test/accounts.test.js`.
 
 ## Credits
 
-Corez is based on the open source arras.io code. Everyone who has helped can be found in `credits.md`.
+Corez is based on the open source arras.io code! Big kudos to them for making a wonderful open source arras.io version that many use today. Everyone who has helped can be found in `credits.md`.
 
 ## Licence
 
