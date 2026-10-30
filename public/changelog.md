@@ -1,3 +1,16 @@
+# Update [2026-10-30] Arms Race tanks are here!
+- 425 Arms Race tanks from arras.io joined the tank tree, and all the made-up tanks are gone. Stalker finally upgrades to Owl!
+- Every tank was rebalanced after about 33,000 test duels, so each one should win around half its fights.
+- Tanks and drones have the classic arras.io look, and drones now grow in size with your tank.
+- The home page is cleaner: Raid Night on the left, Daily Rewards and Featured Tanks on the right, and a new card with today's standings and yesterday's winners. Bots count in the standings too.
+- FFA growth now matches 2TDM, so you can grow up to 5x.
+- The storm now hurts everywhere outside the circle, so no more hiding in the corners.
+- Kills pay more the bigger the tank you take down, and you keep 25% of your score when you respawn.
+- Perks, abilities and drill upgrades are toned down, and some perks and shop items were taken out.
+- In 2TDM your team now votes on a Radar Sweep, a Supply Drop or a Titan when the War Meter fills, and the Titan has a new look.
+- The smoke cloud is no longer pixelated.
+- Phones get new Repel and Override buttons.
+
 # Update [2026-10-22] 2TDM is here!
 - <a href="#cinematic" class="dw-watch-cinematic">Watch cinematic</a>
 - Blue vs Red! You get put on whichever team needs you, and bots fill both sides so there's always a full fight.
